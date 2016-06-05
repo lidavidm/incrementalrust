@@ -28,6 +28,7 @@ impl Amd64Backend {
     }
 
     fn immediate_rep(sexp: &Sexp) -> u32 {
+        use std::ascii::AsciiExt;
         match *sexp {
             Sexp::Atom(ref atom) => match *atom {
                 Atom::I(integer) => (integer << 2) as u32,
@@ -35,6 +36,12 @@ impl Amd64Backend {
                 Atom::S(_) => panic!("Unimplemented: representation of string"),
                 Atom::B(true) => 0b10011111,
                 Atom::B(false) => 0b00011111,
+                Atom::C(chr) => if chr.is_ascii() {
+                    ((chr as u32) << 8) | 0b00001111
+                }
+                else {
+                    panic!("Unimplemented: non-ASCII characters");
+                }
             },
             Sexp::List(ref items) => if items.is_empty() {
                 0b00101111
@@ -140,5 +147,10 @@ mod test {
     fn boolean() {
         assert_eq!(compile_and_execute("#t"), "#t\n");
         assert_eq!(compile_and_execute("#f"), "#f\n");
+    }
+
+    #[test]
+    fn simple_char() {
+        assert_eq!(compile_and_execute("#\\a"), "#\\a\n");
     }
 }

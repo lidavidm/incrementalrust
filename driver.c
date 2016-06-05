@@ -2,8 +2,10 @@
 
 #define FIXNUM_MASK 3
 #define FIXNUM_TAG  0
-#define BOOL_MASK 0b1111111
-#define BOOL_TAG 0b0011111
+#define BOOL_MASK   0b01111111
+#define BOOL_TAG    0b00011111
+#define CHAR_MASK   0b11111111
+#define CHAR_TAG    0b00001111
 
 #define IS_FIXNUM(x) ((x & FIXNUM_MASK) == FIXNUM_TAG)
 #define CONVERT_FIXNUM(x) ((x >> 2))
@@ -13,23 +15,30 @@
 #define IS_BOOL(x) ((x & BOOL_MASK) == BOOL_TAG)
 #define CONVERT_BOOL(x) ((x >> 7))
 
+#define IS_CHAR(x) ((x & CHAR_MASK) == CHAR_TAG)
+#define CONVERT_CHAR(x) ((x >> 8))
+
 int scheme_entry(void);
 
 int main() {
   int val = scheme_entry();
   if (IS_FIXNUM(val)) {
-    printf("%d\n", CONVERT_FIXNUM(val));
+    printf("%d", CONVERT_FIXNUM(val));
   }
   else if (IS_EMPTY_LIST(val)) {
-    printf("()\n");
+    printf("()");
   }
   else if (IS_BOOL(val)) {
     if (CONVERT_BOOL(val)) {
-      printf("#t\n");
+      printf("#t");
     }
     else {
-      printf("#f\n");
+      printf("#f");
     }
   }
+  else if (IS_CHAR(val)) {
+    printf("#\\%c", (char) CONVERT_CHAR(val));
+  }
+  printf("\n");
   return 0;
 }
