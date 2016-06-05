@@ -13,7 +13,9 @@
 #define IS_BOOL(x) ((x & BOOL_MASK) == BOOL_TAG)
 #define CONVERT_BOOL(x) ((x >> 7))
 
-int main(int argc, char **argv) {
+int scheme_entry(void);
+
+int main() {
   int val = scheme_entry();
   if (IS_FIXNUM(val)) {
     printf("%d\n", CONVERT_FIXNUM(val));

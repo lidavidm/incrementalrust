@@ -86,7 +86,10 @@ mod test {
     use std::process::Command;
 
     fn assemble(asm_path: &Path) -> String {
-        let obj_file = tempfile::NamedTempFile::new().expect("Could not create temp object file");
+        let obj_file = tempfile::NamedTempFileOptions::new()
+            .prefix("incrementalrust")
+            .suffix(".o")
+            .create().expect("Could not create temp object file");
         let obj_path = obj_file.path();
         let cmd = Command::new("as")
             .arg("-o")
@@ -95,7 +98,10 @@ mod test {
             .status().expect("Could not assemble");
         assert!(cmd.success());
 
-        let bin_file = tempfile::NamedTempFile::new().expect("Could not create temp binary file");
+        let bin_file = tempfile::NamedTempFileOptions::new()
+            .prefix("incrementalrust")
+            .suffix(".bin")
+            .create().expect("Could not create temp binary file");
         let bin_path = bin_file.path();
         let cmd = Command::new("gcc")
             .arg("-o")
@@ -105,7 +111,7 @@ mod test {
             .status().expect("Could not compile");
         assert!(cmd.success());
 
-        let actual_bin_path = bin_path.with_file_name("incrementalrust_temp");
+        let actual_bin_path = bin_path.with_extension("exec");
         fs::copy(bin_path, &actual_bin_path);
 
         String::from_utf8_lossy(&Command::new(actual_bin_path)
