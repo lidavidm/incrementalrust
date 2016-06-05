@@ -39,6 +39,5 @@ int main() {
   else if (IS_CHAR(val)) {
     printf("#\\%c", (char) CONVERT_CHAR(val));
   }
-  printf("\n");
   return 0;
 }

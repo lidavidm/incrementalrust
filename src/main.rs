@@ -27,42 +27,61 @@ impl Amd64Backend {
         }
     }
 
-    fn immediate_rep(sexp: &Sexp) -> u32 {
+    fn immediate_rep(atom: &Atom) -> u32 {
         use std::ascii::AsciiExt;
-        match *sexp {
-            Sexp::Atom(ref atom) => match *atom {
-                Atom::I(integer) => (integer << 2) as u32,
-                Atom::F(_) => panic!("Unimplemented: representation of float"),
-                Atom::S(_) => panic!("Unimplemented: representation of string"),
-                Atom::B(true) => 0b10011111,
-                Atom::B(false) => 0b00011111,
-                Atom::C(chr) => if chr.is_ascii() {
-                    ((chr as u32) << 8) | 0b00001111
-                }
-                else {
-                    panic!("Unimplemented: non-ASCII characters");
-                }
-            },
-            Sexp::List(ref items) => if items.is_empty() {
-                0b00101111
+        match *atom {
+            Atom::I(integer) => (integer << 2) as u32,
+            Atom::F(_) => panic!("Unimplemented: representation of float"),
+            Atom::S(_) => panic!("Unimplemented: representation of string"),
+            Atom::B(true) => 0b10011111,
+            Atom::B(false) => 0b00011111,
+            Atom::C(chr) => if chr.is_ascii() {
+                ((chr as u32) << 8) | 0b00001111
             }
             else {
-                panic!("Unimplemented: representation of non-empty list");
+                panic!("Unimplemented: non-ASCII characters");
             }
         }
     }
 
     fn compile(&mut self, sexp: &Sexp) -> &str {
-        emit!(self, "movl ${}, %eax", Self::immediate_rep(sexp));
-        emit!(self, "ret");
+        match *sexp {
+            Sexp::Atom(ref atom) => {
+                emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
+            },
+            Sexp::List(ref items) => if items.is_empty() {
+                emit!(self, "movl ${}, %eax", 0b00101111);
+            }
+            else {
+                let (head, tail) = items.split_at(1);
+                if let Sexp::Atom(Atom::S(ref arg)) = head[0] {
+                    if arg == "add1" {
+                        if tail.len() == 1 {
+                            self.compile(&tail[0]);
+                            emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
+                        }
+                        else {
+                            panic!("add1 has multiple args");
+                        }
+                    }
+                }
+            }
+        }
 
+        &self.buffer
+    }
+
+    fn compile_program(&mut self, sexp: &Sexp) -> &str {
+        self.compile(sexp);
+
+        emit!(self, "ret");
         &self.buffer
     }
 }
 
 pub fn compile_program(sexp: &Sexp) -> String {
     let mut backend = Amd64Backend::new();
-    backend.compile(sexp).to_owned()
+    backend.compile_program(sexp).to_owned()
 }
 
 fn main() {
@@ -87,7 +106,7 @@ mod test {
     use sexp::parse;
     use super::*;
 
-    use std::fs::{self, File};
+    use std::fs;
     use std::io::Write;
     use std::path::Path;
     use std::process::Command;
@@ -119,7 +138,7 @@ mod test {
         assert!(cmd.success());
 
         let actual_bin_path = bin_path.with_extension("exec");
-        fs::copy(bin_path, &actual_bin_path);
+        fs::copy(bin_path, &actual_bin_path).expect("Could not copy file!");
 
         String::from_utf8_lossy(&Command::new(actual_bin_path)
             .output().expect("Could not execute").stdout).into_owned()
@@ -135,22 +154,27 @@ mod test {
 
     #[test]
     fn fixnum() {
-        assert_eq!(compile_and_execute("42"), "42\n");
+        assert_eq!(compile_and_execute("42"), "42");
     }
 
     #[test]
     fn empty_list() {
-        assert_eq!(compile_and_execute("()"), "()\n");
+        assert_eq!(compile_and_execute("()"), "()");
     }
 
     #[test]
     fn boolean() {
-        assert_eq!(compile_and_execute("#t"), "#t\n");
-        assert_eq!(compile_and_execute("#f"), "#f\n");
+        assert_eq!(compile_and_execute("#t"), "#t");
+        assert_eq!(compile_and_execute("#f"), "#f");
     }
 
     #[test]
     fn simple_char() {
-        assert_eq!(compile_and_execute("#\\a"), "#\\a\n");
+        assert_eq!(compile_and_execute("#\\a"), "#\\a");
+    }
+
+    #[test]
+    fn add1() {
+        assert_eq!(compile_and_execute("(add1 1)"), "2");
     }
 }
