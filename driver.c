@@ -37,7 +37,16 @@ int main() {
     }
   }
   else if (IS_CHAR(val)) {
-    printf("#\\%c", (char) CONVERT_CHAR(val));
+    char c = CONVERT_CHAR(val);
+    if (c == '\n') {
+      printf("#\\newline");
+    }
+    else if (c == ' ') {
+      printf("#\\space");
+    }
+    else {
+      printf("#\\%c", (char) CONVERT_CHAR(val));
+    }
   }
   return 0;
 }

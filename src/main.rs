@@ -44,6 +44,34 @@ impl Amd64Backend {
         }
     }
 
+    fn compile_primitive(&mut self, op: &str, tail: &[Sexp]) -> bool {
+        if tail.len() != 1 {
+            panic!("add1 has multiple args");
+        }
+
+        self.compile(&tail[0]);
+        match op {
+            "add1" => {
+                emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
+                true
+            }
+
+            "char->integer" => {
+                // TODO: check the tag first
+                emit!(self, "shr $6, %eax");
+                true
+            }
+
+            "integer->char" => {
+                emit!(self, "shl $6, %eax");
+                emit!(self, "orl $15, %eax");
+                true
+            }
+
+            _ => false
+        }
+    }
+
     fn compile(&mut self, sexp: &Sexp) -> &str {
         match *sexp {
             Sexp::Atom(ref atom) => {
@@ -55,14 +83,8 @@ impl Amd64Backend {
             else {
                 let (head, tail) = items.split_at(1);
                 if let Sexp::Atom(Atom::S(ref arg)) = head[0] {
-                    if arg == "add1" {
-                        if tail.len() == 1 {
-                            self.compile(&tail[0]);
-                            emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
-                        }
-                        else {
-                            panic!("add1 has multiple args");
-                        }
+                    if !self.compile_primitive(arg, tail) {
+                        panic!("Invalid primitive: {}", arg);
                     }
                 }
             }
@@ -176,5 +198,20 @@ mod test {
     #[test]
     fn add1() {
         assert_eq!(compile_and_execute("(add1 1)"), "2");
+        assert_eq!(compile_and_execute("(add1 (add1 1))"), "3");
+    }
+
+    #[test]
+    fn char_to_integer() {
+        assert_eq!(compile_and_execute("(char->integer #\\a)"), "97");
+        assert_eq!(compile_and_execute("(char->integer #\\newline)"), "10");
+        assert_eq!(compile_and_execute("(char->integer #\\space)"), "32");
+    }
+
+    #[test]
+    fn integer_to_char() {
+        assert_eq!(compile_and_execute("(integer->char 97)"), "#\\a");
+        assert_eq!(compile_and_execute("(integer->char 10)"), "#\\newline");
+        assert_eq!(compile_and_execute("(integer->char 32)"), "#\\space");
     }
 }
