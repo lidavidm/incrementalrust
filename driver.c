@@ -48,5 +48,8 @@ int main() {
       printf("#\\%c", (char) CONVERT_CHAR(val));
     }
   }
+  else {
+    printf("%x", val);
+  }
   return 0;
 }
