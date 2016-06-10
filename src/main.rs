@@ -44,6 +44,14 @@ impl Amd64Backend {
         }
     }
 
+    // Emits the representation for true or false, based on the result
+    // of a prior comparison.
+    fn emit_boolean(&mut self) {
+        emit!(self, "sete %al");
+        emit!(self, "sall $7, %eax");
+        emit!(self, "orl $31, %eax");
+    }
+
     fn compile_primitive(&mut self, op: &str, tail: &[Sexp]) -> bool {
         if tail.len() != 1 {
             panic!("add1 has multiple args");
@@ -65,6 +73,24 @@ impl Amd64Backend {
             "integer->char" => {
                 emit!(self, "shl $6, %eax");
                 emit!(self, "orl $15, %eax");
+                true
+            }
+
+            "null?" => {
+                emit!(self, "andl $127, %eax");
+                emit!(self, "cmpl $47, %eax");
+                self.emit_boolean();
+                true
+            }
+
+            "zero?" => {
+                emit!(self, "cmpl $0, %eax");
+                self.emit_boolean();
+                true
+            }
+
+            "not" => {
+                emit!(self, "xorl $128, %eax");
                 true
             }
 
@@ -213,5 +239,23 @@ mod test {
         assert_eq!(compile_and_execute("(integer->char 97)"), "#\\a");
         assert_eq!(compile_and_execute("(integer->char 10)"), "#\\newline");
         assert_eq!(compile_and_execute("(integer->char 32)"), "#\\space");
+    }
+
+    #[test]
+    fn null_p() {
+        assert_eq!(compile_and_execute("(null? ())"), "#t");
+        assert_eq!(compile_and_execute("(null? 0)"), "#f");
+    }
+
+    #[test]
+    fn zero_p() {
+        assert_eq!(compile_and_execute("(zero? ())"), "#f");
+        assert_eq!(compile_and_execute("(zero? 0)"), "#t");
+    }
+
+    #[test]
+    fn not() {
+        assert_eq!(compile_and_execute("(not #t)"), "#f");
+        assert_eq!(compile_and_execute("(not #f)"), "#t");
     }
 }
