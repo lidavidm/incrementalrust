@@ -77,7 +77,7 @@ impl Amd64Backend {
             }
 
             "null?" => {
-                emit!(self, "andl $127, %eax");
+                emit!(self, "andl $255, %eax");
                 emit!(self, "cmpl $47, %eax");
                 self.emit_boolean();
                 true
@@ -85,6 +85,20 @@ impl Amd64Backend {
 
             "zero?" => {
                 emit!(self, "cmpl $0, %eax");
+                self.emit_boolean();
+                true
+            }
+
+            "integer?" => {
+                emit!(self, "andl $3, %eax");
+                emit!(self, "cmpl $0, %eax");
+                self.emit_boolean();
+                true
+            }
+
+            "boolean?" => {
+                emit!(self, "andl $127, %eax");
+                emit!(self, "cmpl $31, %eax");
                 self.emit_boolean();
                 true
             }
@@ -251,6 +265,22 @@ mod test {
     fn zero_p() {
         assert_eq!(compile_and_execute("(zero? ())"), "#f");
         assert_eq!(compile_and_execute("(zero? 0)"), "#t");
+    }
+
+    #[test]
+    fn integer_p() {
+        assert_eq!(compile_and_execute("(integer? ())"), "#f");
+        assert_eq!(compile_and_execute("(integer? 0)"), "#t");
+        assert_eq!(compile_and_execute("(integer? #t)"), "#f");
+        assert_eq!(compile_and_execute("(integer? #\\a)"), "#f");
+    }
+
+    #[test]
+    fn boolean_p() {
+        assert_eq!(compile_and_execute("(boolean? ())"), "#f");
+        assert_eq!(compile_and_execute("(boolean? 0)"), "#f");
+        assert_eq!(compile_and_execute("(boolean? #t)"), "#t");
+        assert_eq!(compile_and_execute("(boolean? #\\a)"), "#f");
     }
 
     #[test]
