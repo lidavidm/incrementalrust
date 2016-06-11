@@ -172,6 +172,14 @@ impl Amd64Backend {
                 self.compile(&tail[0]);
                 emit!(self, "subl {}(%rsp), %eax", location);
             }
+
+            "*" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "imull {}(%rsp), %eax", location);
+                emit!(self, "sarl $2, %eax");
+            }
         );
 
         Ok(true)
@@ -250,8 +258,16 @@ fn assemble(asm_path: &Path) -> String {
     let actual_bin_path = bin_path.with_extension("exec");
     fs::copy(bin_path, &actual_bin_path).expect("Could not copy file!");
 
-    String::from_utf8_lossy(&Command::new(actual_bin_path)
-                            .output().expect("Could not execute").stdout).into_owned()
+    let result = String::from_utf8_lossy(
+        &Command::new(&actual_bin_path)
+            .output()
+            .expect("Could not execute")
+            .stdout)
+        .into_owned();
+
+    fs::remove_file(&actual_bin_path).expect("Could not remove temp file!");
+
+    result
 }
 
 pub fn compile_and_execute(input: &str) -> String {
@@ -375,5 +391,15 @@ mod test {
         assert_eq!(compile_and_execute("(- 2 0)"), "2");
         assert_eq!(compile_and_execute("(- 1 3)"), "-2");
         assert_eq!(compile_and_execute("(- (char->integer #\\a) 3)"), "94");
+    }
+
+    #[test]
+    fn binary_mul() {
+        assert_eq!(compile_and_execute("(* 0 0)"), "0");
+        assert_eq!(compile_and_execute("(* 0 2)"), "0");
+        assert_eq!(compile_and_execute("(* 2 0)"), "0");
+        assert_eq!(compile_and_execute("(* 1 3)"), "3");
+        assert_eq!(compile_and_execute("(* 3 5)"), "15");
+        assert_eq!(compile_and_execute("(* (char->integer #\\a) 1)"), "97");
     }
 }
