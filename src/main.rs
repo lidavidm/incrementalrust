@@ -281,7 +281,11 @@ pub fn compile_and_execute(input: &str) -> String {
 fn main() {
     use std::io::{self, BufRead};
     let stdin = io::stdin();
+    let mut stdout = io::stdout();
     let handle = stdin.lock();
+    print!("> ");
+    stdout.flush().expect("Could not flush stdout");
+
     for line in handle.lines() {
         let line = line.unwrap();
         if let Ok(result) = parse(&line) {
@@ -293,6 +297,9 @@ fn main() {
         else {
             println!("{:?}", line);
         }
+
+        print!("> ");
+        stdout.flush().expect("Could not flush stdout");
     }
 }
 
