@@ -37,7 +37,6 @@ macro_rules! primitives {
                     if $tail.len() != $expected {
                         return Err(CompileError::NumArgs($op.to_owned(), $expected, $tail.len()));
                     }
-                    $self_.compile(&$tail[0]);
 
                     $result
                 }
@@ -106,6 +105,7 @@ impl Amd64Backend {
     fn compile_unary_primitive(&mut self, op: &str, tail: &[Sexp]) -> Result<bool> {
         primitives!(self, 1, op, tail,
             "add1" => {
+                self.compile(&tail[0]);
                 emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
             }
 
