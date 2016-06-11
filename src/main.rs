@@ -29,6 +29,26 @@ macro_rules! emit {
     }
 }
 
+macro_rules! primitives {
+    ($self_: ident, $expected: expr, $op: ident, $tail: ident, $($pat: pat => $result: expr)*) => {{
+        match $op {
+            $(
+                $pat => {
+                    if $tail.len() != $expected {
+                        return Err(CompileError::NumArgs($op.to_owned(), $expected, $tail.len()));
+                    }
+                    $self_.compile(&$tail[0]);
+
+                    $result
+                }
+            ),*
+                _ => {
+                    return Ok(false);
+                }
+        }
+    }}
+}
+
 impl Amd64Backend {
     fn new() -> Amd64Backend {
         let mut buffer = String::new();
@@ -84,10 +104,8 @@ impl Amd64Backend {
     }
 
     fn compile_unary_primitive(&mut self, op: &str, tail: &[Sexp]) -> Result<bool> {
-        // TODO: need to check length, but only if it's a valid op
-        match op {
+        primitives!(self, 1, op, tail,
             "add1" => {
-                self.compile(&tail[0]);
                 emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
             }
 
@@ -134,16 +152,13 @@ impl Amd64Backend {
                 self.compile(&tail[0]);
                 emit!(self, "xorl $128, %eax");
             }
-
-            _ => return Ok(false)
-        };
+        );
 
         Ok(true)
     }
 
     fn compile_binary_primitive(&mut self, op: &str, tail: &[Sexp]) -> Result<bool> {
-        // TODO: need to check len, but only if it's a valid op
-        match op {
+        primitives!(self, 2, op, tail,
             "+" => {
                 self.compile(&tail[1]);
                 let location = self.push();
@@ -151,8 +166,13 @@ impl Amd64Backend {
                 emit!(self, "addl {}(%rsp), %eax", location);
             }
 
-            _ => return Ok(false)
-        }
+            "-" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "subl {}(%rsp), %eax", location);
+            }
+        );
 
         Ok(true)
     }
