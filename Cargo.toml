@@ -4,9 +4,7 @@ version = "0.1.0"
 authors = ["David Li <li.davidm96@gmail.com>"]
 
 [dependencies]
+tempfile = "2.1.3"
 
 [dependencies.sexp]
 path = "./sexp"
-
-[dev-dependencies]
-tempfile = "2.1.3"
