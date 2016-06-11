@@ -367,4 +367,13 @@ mod test {
         assert_eq!(compile_and_execute("(+ 1 3)"), "4");
         assert_eq!(compile_and_execute("(+ (char->integer #\\a) 3)"), "100");
     }
+
+    #[test]
+    fn binary_sub() {
+        assert_eq!(compile_and_execute("(- 0 0)"), "0");
+        assert_eq!(compile_and_execute("(- 0 2)"), "-2");
+        assert_eq!(compile_and_execute("(- 2 0)"), "2");
+        assert_eq!(compile_and_execute("(- 1 3)"), "-2");
+        assert_eq!(compile_and_execute("(- (char->integer #\\a) 3)"), "94");
+    }
 }
