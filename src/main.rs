@@ -97,6 +97,7 @@ impl Amd64Backend {
     // Emits the representation for true or false, based on the result
     // of a prior comparison.
     fn emit_boolean(&mut self) {
+        emit!(self, "movl $0, %eax");
         emit!(self, "sete %al");
         emit!(self, "sall $7, %eax");
         emit!(self, "orl $31, %eax");
@@ -372,6 +373,7 @@ mod test {
     fn boolean_p() {
         assert_eq!(compile_and_execute("(boolean? ())"), "#f");
         assert_eq!(compile_and_execute("(boolean? 0)"), "#f");
+        assert_eq!(compile_and_execute("(boolean? 2147483647)"), "#f");
         assert_eq!(compile_and_execute("(boolean? #t)"), "#t");
         assert_eq!(compile_and_execute("(boolean? #\\a)"), "#f");
     }
