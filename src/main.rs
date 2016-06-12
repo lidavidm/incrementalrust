@@ -51,6 +51,14 @@ macro_rules! primitives {
     }}
 }
 
+enum Comparison {
+    Eq,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
+}
+
 impl Amd64Backend {
     fn new() -> Amd64Backend {
         let mut buffer = String::new();
@@ -104,9 +112,16 @@ impl Amd64Backend {
 
     // Emits the representation for true or false, based on the result
     // of a prior comparison.
-    fn emit_boolean(&mut self) {
+    fn emit_boolean(&mut self, comparison: Comparison) {
+        use Comparison::*;
         emit!(self, "movl $0, %eax");
-        emit!(self, "sete %al");
+        emit!(self, "set{} %al", match comparison {
+            Eq => "e",
+            Lt => "l",
+            Gt => "g",
+            Leq => "le",
+            Geq => "ge",
+        });
         emit!(self, "sall $7, %eax");
         emit!(self, "orl $31, %eax");
     }
@@ -134,27 +149,27 @@ impl Amd64Backend {
                 self.compile(&tail[0]);
                 emit!(self, "andl $255, %eax");
                 emit!(self, "cmpl $47, %eax");
-                self.emit_boolean();
+                self.emit_boolean(Comparison::Eq);
             }
 
             "zero?" => {
                 self.compile(&tail[0]);
                 emit!(self, "cmpl $0, %eax");
-                self.emit_boolean();
+                self.emit_boolean(Comparison::Eq);
             }
 
             "integer?" => {
                 self.compile(&tail[0]);
                 emit!(self, "andl $3, %eax");
                 emit!(self, "cmpl $0, %eax");
-                self.emit_boolean();
+                self.emit_boolean(Comparison::Eq);
             }
 
             "boolean?" => {
                 self.compile(&tail[0]);
                 emit!(self, "andl $127, %eax");
                 emit!(self, "cmpl $31, %eax");
-                self.emit_boolean();
+                self.emit_boolean(Comparison::Eq);
             }
 
             "not" => {
@@ -195,7 +210,39 @@ impl Amd64Backend {
                 let location = self.push();
                 self.compile(&tail[0]);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
-                self.emit_boolean();
+                self.emit_boolean(Comparison::Eq);
+            }
+
+            "<" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "cmpl {}(%rsp), %eax", location);
+                self.emit_boolean(Comparison::Lt);
+            }
+
+            ">" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "cmpl {}(%rsp), %eax", location);
+                self.emit_boolean(Comparison::Gt);
+            }
+
+            "<=" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "cmpl {}(%rsp), %eax", location);
+                self.emit_boolean(Comparison::Leq);
+            }
+
+            ">=" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "cmpl {}(%rsp), %eax", location);
+                self.emit_boolean(Comparison::Geq);
             }
         );
 
@@ -389,7 +436,7 @@ mod test {
     fn boolean_p() {
         assert_eq!(compile_and_execute("(boolean? ())"), "#f");
         assert_eq!(compile_and_execute("(boolean? 0)"), "#f");
-        assert_eq!(compile_and_execute("(boolean? 2147483647)"), "#f");
+        assert_eq!(compile_and_execute("(boolean? 1385901)"), "#f");
         assert_eq!(compile_and_execute("(boolean? #t)"), "#t");
         assert_eq!(compile_and_execute("(boolean? #\\a)"), "#f");
     }
@@ -430,10 +477,40 @@ mod test {
 
     #[test]
     fn eq_p() {
-        let items = vec!["()", "0", "2147483647", "#t", "#f", "#\\a", "#\\newline"];
+        let maxint = format!("{}", MAX_INT);
+        let items = vec!["()", "0", &maxint, "#t", "#f", "#\\a", "#\\newline"];
         for a in items.iter() {
             for b in items.iter() {
                 assert_eq!(compile_and_execute(&format!("(= {} {})", a, b)), if a == b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn comparison_p() {
+        let items = vec![0, -10, MIN_INT, MAX_INT, 1];
+        for a in items.iter() {
+            for b in items.iter() {
+                assert_eq!(compile_and_execute(&format!("(> {} {})", a, b)), if a > b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(< {} {})", a, b)), if a < b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(>= {} {})", a, b)), if a >= b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(<= {} {})", a, b)), if a <= b {
                     "#t"
                 } else {
                     "#f"
