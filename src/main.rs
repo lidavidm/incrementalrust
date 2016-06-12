@@ -8,6 +8,9 @@ use std::process::Command;
 
 use sexp::{Atom, Sexp, parse};
 
+pub const MIN_INT: i64 = -536870912; // -i32::pow(2, 29)
+pub const MAX_INT: i64 = 536870911; // i32::pow(2, 29) - 1
+
 #[derive(Debug)]
 enum CompileError {
     // Procedure, expected, actual
@@ -65,7 +68,12 @@ impl Amd64Backend {
     fn immediate_rep(atom: &Atom) -> u32 {
         use std::ascii::AsciiExt;
         match *atom {
-            Atom::I(integer) => (integer << 2) as u32,
+            Atom::I(integer) => {
+                if integer < MIN_INT || integer > MAX_INT {
+                    panic!("Integer out of bounds: {}", integer);
+                }
+                (integer << 2) as u32
+            },
             Atom::F(_) => panic!("Unimplemented: representation of float"),
             Atom::S(_) => panic!("Unimplemented: representation of string"),
             Atom::B(true) => 0b10011111,
