@@ -181,6 +181,14 @@ impl Amd64Backend {
                 emit!(self, "imull {}(%rsp), %eax", location);
                 emit!(self, "sarl $2, %eax");
             }
+
+            "=" => {
+                self.compile(&tail[1]);
+                let location = self.push();
+                self.compile(&tail[0]);
+                emit!(self, "cmpl {}(%rsp), %eax", location);
+                self.emit_boolean();
+            }
         );
 
         Ok(true)
@@ -410,5 +418,19 @@ mod test {
         assert_eq!(compile_and_execute("(* 1 3)"), "3");
         assert_eq!(compile_and_execute("(* 3 5)"), "15");
         assert_eq!(compile_and_execute("(* (char->integer #\\a) 1)"), "97");
+    }
+
+    #[test]
+    fn eq_p() {
+        let items = vec!["()", "0", "2147483647", "#t", "#f", "#\\a", "#\\newline"];
+        for a in items.iter() {
+            for b in items.iter() {
+                assert_eq!(compile_and_execute(&format!("(= {} {})", a, b)), if a == b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+            }
+        }
     }
 }
