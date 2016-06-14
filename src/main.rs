@@ -79,6 +79,15 @@ macro_rules! primitives {
     }}
 }
 
+macro_rules! try_or_panic {
+    ($expr: expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(e) => panic!("{:?}", e),
+        }
+    }
+}
+
 enum Comparison {
     Eq,
     Lt,
@@ -294,16 +303,14 @@ impl Amd64Backend {
                 let (head, tail) = items.split_at(1);
                 if let Sexp::Atom(Atom::S(ref arg)) = head[0] {
                     // TODO: make this less messy
-                    match self.compile_unary_primitive(arg, tail) {
-                        Ok(true) => (),
-                        Ok(false) => {
-                            match self.compile_binary_primitive(arg, tail) {
-                                Ok(true) => (),
-                                Ok(false) => panic!("Unrecognized primitive: {}", arg),
-                                Err(err) => panic!("{:?}", err),
-                            }
-                        },
-                        Err(err) => panic!("{:?}", err),
+                    if try_or_panic!(self.compile_unary_primitive(arg, tail, environment)) {
+
+                    }
+                    else if try_or_panic!(self.compile_binary_primitive(arg, tail, environment)) {
+
+                    }
+                    else {
+                        panic!("Unrecognized primitive: {}", arg);
                     }
                 }
             }
