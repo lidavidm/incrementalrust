@@ -1,6 +1,7 @@
 extern crate sexp;
 extern crate tempfile;
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -19,9 +20,36 @@ enum CompileError {
 
 type Result<T> = std::result::Result<T, CompileError>;
 
-struct Amd64Backend {
-    buffer: String,
-    stack_location: usize,
+struct Environment<'a> {
+    bindings: HashMap<String, usize>,
+    containing_env: Option<&'a Environment<'a>>,
+}
+
+impl<'a> Environment<'a> {
+    fn new() -> Environment<'a> {
+        Environment {
+            bindings: HashMap::new(),
+            containing_env: None,
+        }
+    }
+
+    fn new_under(env: &'a Environment<'a>) -> Environment<'a> {
+        Environment {
+            bindings: HashMap::new(),
+            containing_env: Some(env),
+        }
+    }
+
+    fn lookup(&self, key: &str) -> Option<usize> {
+        match self.bindings.get(key) {
+            Some(x) => Some(*x),
+            None => self.containing_env.and_then(|env| env.lookup(key)),
+        }
+    }
+
+    fn update(&mut self, key: &str, location: usize) {
+        self.bindings.insert(key.to_owned(), location);
+    }
 }
 
 macro_rules! emit {
@@ -57,6 +85,11 @@ enum Comparison {
     Gt,
     Leq,
     Geq,
+}
+
+struct Amd64Backend {
+    buffer: String,
+    stack_location: usize,
 }
 
 impl Amd64Backend {
@@ -126,54 +159,54 @@ impl Amd64Backend {
         emit!(self, "orl $31, %eax");
     }
 
-    fn compile_unary_primitive(&mut self, op: &str, tail: &[Sexp]) -> Result<bool> {
+    fn compile_unary_primitive(&mut self, op: &str, tail: &[Sexp], environment: &mut Environment) -> Result<bool> {
         primitives!(self, 1, op, tail,
             "add1" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
             }
 
             "char->integer" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 // TODO: check the tag first
                 emit!(self, "shr $6, %eax");
             }
 
             "integer->char" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "shl $6, %eax");
                 emit!(self, "orl $15, %eax");
             }
 
             "null?" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "andl $255, %eax");
                 emit!(self, "cmpl $47, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "zero?" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl $0, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "integer?" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "andl $3, %eax");
                 emit!(self, "cmpl $0, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "boolean?" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "andl $127, %eax");
                 emit!(self, "cmpl $31, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "not" => {
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "xorl $128, %eax");
             }
         );
@@ -181,66 +214,66 @@ impl Amd64Backend {
         Ok(true)
     }
 
-    fn compile_binary_primitive(&mut self, op: &str, tail: &[Sexp]) -> Result<bool> {
+    fn compile_binary_primitive(&mut self, op: &str, tail: &[Sexp], environment: &mut Environment) -> Result<bool> {
         primitives!(self, 2, op, tail,
             "+" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "addl {}(%rsp), %eax", location);
             }
 
             "-" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "subl {}(%rsp), %eax", location);
             }
 
             "*" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "imull {}(%rsp), %eax", location);
                 emit!(self, "sarl $2, %eax");
             }
 
             "=" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
                 self.emit_boolean(Comparison::Eq);
             }
 
             "<" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
                 self.emit_boolean(Comparison::Lt);
             }
 
             ">" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
                 self.emit_boolean(Comparison::Gt);
             }
 
             "<=" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
                 self.emit_boolean(Comparison::Leq);
             }
 
             ">=" => {
-                self.compile(&tail[1]);
+                self.compile(&tail[1], environment);
                 let location = self.push();
-                self.compile(&tail[0]);
+                self.compile(&tail[0], environment);
                 emit!(self, "cmpl {}(%rsp), %eax", location);
                 self.emit_boolean(Comparison::Geq);
             }
@@ -249,7 +282,7 @@ impl Amd64Backend {
         Ok(true)
     }
 
-    fn compile(&mut self, sexp: &Sexp) -> &str {
+    fn compile(&mut self, sexp: &Sexp, environment: &mut Environment) -> &str {
         match *sexp {
             Sexp::Atom(ref atom) => {
                 emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
@@ -280,7 +313,8 @@ impl Amd64Backend {
     }
 
     fn compile_program(&mut self, sexp: &Sexp) -> &str {
-        self.compile(sexp);
+        let mut environment = Environment::new();
+        self.compile(sexp, &mut environment);
 
         emit!(self, "ret");
         &self.buffer
