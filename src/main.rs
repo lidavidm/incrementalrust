@@ -21,7 +21,7 @@ enum CompileError {
 type Result<T> = std::result::Result<T, CompileError>;
 
 struct Environment<'a> {
-    bindings: HashMap<String, usize>,
+    bindings: HashMap<String, isize>,
     containing_env: Option<&'a Environment<'a>>,
 }
 
@@ -40,14 +40,14 @@ impl<'a> Environment<'a> {
         }
     }
 
-    fn lookup(&self, key: &str) -> Option<usize> {
+    fn lookup(&self, key: &str) -> Option<isize> {
         match self.bindings.get(key) {
             Some(x) => Some(*x),
             None => self.containing_env.and_then(|env| env.lookup(key)),
         }
     }
 
-    fn update(&mut self, key: &str, location: usize) {
+    fn update(&mut self, key: &str, location: isize) {
         self.bindings.insert(key.to_owned(), location);
     }
 }
@@ -294,7 +294,17 @@ impl Amd64Backend {
     fn compile(&mut self, sexp: &Sexp, environment: &mut Environment) -> &str {
         match *sexp {
             Sexp::Atom(ref atom) => {
-                emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
+                if let Atom::S(ref name) = *atom {
+                    if let Some(location) = environment.lookup(name) {
+                        emit!(self, "movl {}(%rsp), %eax", location);
+                    }
+                    else {
+                        panic!("Unbound name: {}", name);
+                    }
+                }
+                else {
+                    emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
+                }
             },
             Sexp::List(ref items) => if items.is_empty() {
                 emit!(self, "movl ${}, %eax", 0b00101111);
@@ -308,6 +318,32 @@ impl Amd64Backend {
                     }
                     else if try_or_panic!(self.compile_binary_primitive(arg, tail, environment)) {
 
+                    }
+                    else if arg == "let" {
+                        let (bindings, expr) = tail.split_at(tail.len() - 1);
+                        for item in bindings {
+                            if let Sexp::List(ref items) = *item {
+                                if items.len() != 2 {
+                                    panic!("Invalid binding in let expression: {}", item);
+                                }
+
+                                let name = &items[0];
+                                let value = &items[1];
+
+                                if let Sexp::Atom(Atom::S(ref name)) = *name {
+                                    self.compile(value, environment);
+                                    let location = self.push();
+                                    environment.update(name, location);
+                                }
+                                else {
+                                    panic!("Invalid name in let expression: {}", name);
+                                }
+                            }
+                            else {
+                                panic!("Invalid expression in let expression: {}", item);
+                            }
+                        }
+                        self.compile(&expr[0], environment);
                     }
                     else {
                         panic!("Unrecognized primitive: {}", arg);
@@ -558,5 +594,14 @@ mod test {
                 });
             }
         }
+    }
+
+    #[test]
+    fn let_bindings() {
+        assert_eq!(compile_and_execute("(let (a 2) (+ a 1))"), "3");
+        assert_eq!(compile_and_execute("(let (a 2) (+ a a))"), "4");
+        assert_eq!(compile_and_execute("(let (a 2) (b 3) (+ a b))"), "5");
+        assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (+ a b))"), "6");
+        assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (let (a 3) (* a b)))"), "12");
     }
 }
