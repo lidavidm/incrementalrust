@@ -334,7 +334,7 @@ impl Amd64Backend {
 
                     }
                     else if arg == "let" {
-                        // TODO: need new_under
+                        let environment = &mut Environment::new_under(environment);
                         let (bindings, expr) = tail.split_at(tail.len() - 1);
                         for item in bindings {
                             if let Sexp::List(ref items) = *item {
@@ -639,6 +639,7 @@ mod test {
         assert_eq!(compile_and_execute("(let (a 2) (b 3) (+ a b))"), "5");
         assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (+ a b))"), "6");
         assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (let (a 3) (* a b)))"), "12");
+        assert_eq!(compile_and_execute("(let (a 2) (b (let (a 3) (+ a 2))) (+ a b))"), "7");
     }
 
     #[test]
