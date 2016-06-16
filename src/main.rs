@@ -60,6 +60,12 @@ macro_rules! emit {
     }
 }
 
+macro_rules! emit_label {
+    ($self_: ident, $label: expr) => {
+        $self_.buffer.push_str(&format!("\t{}:\n", $label));
+    }
+}
+
 macro_rules! primitives {
     ($self_: ident, $expected: expr, $op: ident, $tail: ident, $($pat: pat => $result: expr)*) => {{
         match $op {
@@ -99,6 +105,7 @@ enum Comparison {
 struct Amd64Backend {
     buffer: String,
     stack_location: usize,
+    label_counter: usize,
 }
 
 impl Amd64Backend {
@@ -112,6 +119,7 @@ impl Amd64Backend {
         Amd64Backend {
             buffer: buffer,
             stack_location: 1,
+            label_counter: 0,
         }
     }
 
@@ -135,6 +143,12 @@ impl Amd64Backend {
                 panic!("Unimplemented: non-ASCII characters");
             }
         }
+    }
+
+    fn make_label(&mut self) -> String {
+        let label = format!("label{}", self.label_counter);
+        self.label_counter += 1;
+        label
     }
 
     fn push(&mut self) -> isize {
@@ -320,6 +334,7 @@ impl Amd64Backend {
 
                     }
                     else if arg == "let" {
+                        // TODO: need new_under
                         let (bindings, expr) = tail.split_at(tail.len() - 1);
                         for item in bindings {
                             if let Sexp::List(ref items) = *item {
@@ -344,6 +359,27 @@ impl Amd64Backend {
                             }
                         }
                         self.compile(&expr[0], environment);
+                    }
+                    else if arg == "if" {
+                        if tail.len() != 3 {
+                            panic!("Invalid if statement form: {}", sexp);
+                        }
+                        let cond = &tail[0];
+                        let true_branch = &tail[1];
+                        let false_branch = &tail[2];
+
+                        let (label0, label1) = (self.make_label(), self.make_label());
+
+                        self.compile(cond, environment);
+                        // TODO: don't hardcode - use immediate_rep
+                        emit!(self, "cmpl ${}, %eax", Self::immediate_rep(&Atom::B(false)));
+                        emit!(self, "je {}", label0);
+                        // Need unique label generation, plus jumps
+                        self.compile(true_branch, environment);
+                        emit!(self, "jmp {}", label1);
+                        emit_label!(self, label0);
+                        self.compile(false_branch, environment);
+                        emit_label!(self, label1);
                     }
                     else {
                         panic!("Unrecognized primitive: {}", arg);
@@ -603,5 +639,15 @@ mod test {
         assert_eq!(compile_and_execute("(let (a 2) (b 3) (+ a b))"), "5");
         assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (+ a b))"), "6");
         assert_eq!(compile_and_execute("(let (a 2) (b (+ a 2)) (let (a 3) (* a b)))"), "12");
+    }
+
+    #[test]
+    fn if_expression() {
+        assert_eq!(compile_and_execute("(if #t 2 3)"), "2");
+        assert_eq!(compile_and_execute("(if #f 2 3)"), "3");
+        assert_eq!(compile_and_execute("(if (= 2 3) 2 3)"), "3");
+        assert_eq!(compile_and_execute("(if (= 2 (+ 1 1)) 2 3)"), "2");
+        assert_eq!(compile_and_execute("(if (= 2 (+ 1 1)) #f 3)"), "#f");
+        assert_eq!(compile_and_execute("(let (a 2) (b 3) (if (> a b) 3 5))"), "5");
     }
 }
