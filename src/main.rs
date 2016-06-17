@@ -133,7 +133,8 @@ impl Amd64Backend {
                 (integer << 2) as u32
             },
             Atom::F(_) => panic!("Unimplemented: representation of float"),
-            Atom::N(_) => panic!("Unimplemented: representation of string"),
+            Atom::N(ref name) => panic!("Unbound name: {}", name),
+            Atom::S(_) => panic!("Unimplemented: representation of string"),
             Atom::B(true) => 0b10011111,
             Atom::B(false) => 0b00011111,
             Atom::C(chr) => if chr.is_ascii() {
