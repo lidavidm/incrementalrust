@@ -18,10 +18,11 @@
 #define IS_CHAR(x) ((x & CHAR_MASK) == CHAR_TAG)
 #define CONVERT_CHAR(x) ((x >> 8))
 
-int scheme_entry(void);
+int scheme_entry(void*);
 
 int main() {
-  int val = scheme_entry();
+  char memory[1000];
+  int val = scheme_entry(memory);
   if (IS_FIXNUM(val)) {
     printf("%d", CONVERT_FIXNUM(val));
   }
