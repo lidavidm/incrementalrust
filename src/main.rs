@@ -341,6 +341,22 @@ impl Amd64Backend {
                         panic!("Unbound name: {}", name);
                     }
                 }
+                else if let Atom::S(ref string) = *atom {
+                    let bytes = string.to_owned().into_bytes();
+                    emit!(self, "movl %edi, %eax");
+                    emit!(self, "orl $0b011, %eax");
+                    emit!(self, "movl ${}, 0(%edi)", bytes.len());
+                    emit!(self, "addl $4, %edi");
+                    for byte in bytes.iter() {
+                        emit!(self, "movb ${}, 0(%edi)", byte);
+                        emit!(self, "addl $1, %edi");
+                    }
+                    // Round up allocation to 8 bytes
+                    let remainder = (4 + bytes.len()) % 8;
+                    if remainder > 0 {
+                        emit!(self, "addl ${}, %edi", 8 - remainder);
+                    }
+                }
                 else {
                     emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
                 }
@@ -691,5 +707,11 @@ mod test {
         assert_eq!(compile_and_execute("(let (a (cons 10 20)) (cdr a))"), "20");
         assert_eq!(compile_and_execute("(let (a (cons 10 (cons 20 ()))) (car (cdr a)))"), "20");
         assert_eq!(compile_and_execute("(let (a (cons 10 (cons 20 ()))) (cdr (cdr a)))"), "()");
+    }
+
+    #[test]
+    fn string_representation() {
+        assert_eq!(compile_and_execute("\"Hello, world!\""), "\"Hello, world!\"");
+        assert_eq!(compile_and_execute("(cons 20 \"Hello, world!\")"), "(20 \"Hello, world!\")");
     }
 }

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define FIXNUM_MASK 3
 #define FIXNUM_TAG  0
@@ -9,6 +10,8 @@
 #define CHAR_TAG    0b00001111
 #define PAIR_MASK   0b111
 #define PAIR_TAG    0b001
+#define STRING_MASK 0b111
+#define STRING_TAG  0b011
 
 #define IS_FIXNUM(x) ((x & FIXNUM_MASK) == FIXNUM_TAG)
 #define CONVERT_FIXNUM(x) ((x >> 2))
@@ -24,6 +27,22 @@
 #define IS_PAIR(x) ((x & PAIR_MASK) == PAIR_TAG)
 #define CAR(x) (*((int32_t*) (uintptr_t) (x & ~PAIR_MASK)))
 #define CDR(x) (*(((int32_t*) (uintptr_t) (x & ~PAIR_MASK)) + 1))
+
+#define IS_STRING(x) ((x & STRING_MASK) == STRING_TAG)
+
+char *copy_string(int val) {
+  val = val & ~STRING_MASK;
+  int32_t *length = (int32_t*) (uintptr_t) val;
+  char *source = (char*) (uintptr_t) (val + sizeof(int32_t));
+  char *result = malloc(*length + 1);
+
+  for (int i = 0; i < *length; i++) {
+    result[i] = source[i];
+  }
+  result[*length] = '\0';
+
+  return result;
+}
 
 char memory[1000];
 
@@ -64,6 +83,11 @@ void print(int val) {
     printf(" ");
     print(CDR(val));
     printf(")");
+  }
+  else if (IS_STRING(val)) {
+    char *string = copy_string(val);
+    printf("\"%s\"", string);
+    free(string);
   }
   else {
     printf("Heap location: %p\n", memory);
