@@ -301,6 +301,16 @@ impl Amd64Backend {
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Geq);
             }
+
+            "cons" => {
+                self.compile(&tail[0], environment);
+                emit!(self, "movl %eax, 0(%edi)");
+                self.compile(&tail[1], environment);
+                emit!(self, "movl %eax, 4(%edi)");
+                emit!(self, "movl %edi, %eax");
+                emit!(self, "orl $1, %eax");
+                emit!(self, "addl $8, %edi");
+            }
         );
 
         Ok(true)
@@ -393,6 +403,10 @@ impl Amd64Backend {
     }
 
     fn compile_program(&mut self, sexp: &Sexp) -> &str {
+        // Align rdi (base of heap) to 8-byte boundary
+        emit!(self, "addl $7, %edi");
+        emit!(self, "andl $0xfffffff8, %edi");
+
         let mut environment = Environment::new();
         self.compile(sexp, &mut environment);
 
