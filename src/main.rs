@@ -154,7 +154,7 @@ impl Amd64Backend {
 
     fn push(&mut self) -> isize {
         let location = self.peek();
-        emit!(self, "movl %eax, {}(%rsp)", location);
+        emit!(self, "movl %eax, {}(%esp)", location);
         self.stack_location += 1;
         location
     }
@@ -244,21 +244,21 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "addl {}(%rsp), %eax", location);
+                emit!(self, "addl {}(%esp), %eax", location);
             }
 
             "-" => {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "subl {}(%rsp), %eax", location);
+                emit!(self, "subl {}(%esp), %eax", location);
             }
 
             "*" => {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "imull {}(%rsp), %eax", location);
+                emit!(self, "imull {}(%esp), %eax", location);
                 emit!(self, "sarl $2, %eax");
             }
 
@@ -266,7 +266,7 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "cmpl {}(%rsp), %eax", location);
+                emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Eq);
             }
 
@@ -274,7 +274,7 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "cmpl {}(%rsp), %eax", location);
+                emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Lt);
             }
 
@@ -282,7 +282,7 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "cmpl {}(%rsp), %eax", location);
+                emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Gt);
             }
 
@@ -290,7 +290,7 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "cmpl {}(%rsp), %eax", location);
+                emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Leq);
             }
 
@@ -298,7 +298,7 @@ impl Amd64Backend {
                 self.compile(&tail[1], environment);
                 let location = self.push();
                 self.compile(&tail[0], environment);
-                emit!(self, "cmpl {}(%rsp), %eax", location);
+                emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Geq);
             }
         );
@@ -311,7 +311,7 @@ impl Amd64Backend {
             Sexp::Atom(ref atom) => {
                 if let Atom::N(ref name) = *atom {
                     if let Some(location) = environment.lookup(name) {
-                        emit!(self, "movl {}(%rsp), %eax", location);
+                        emit!(self, "movl {}(%esp), %eax", location);
                     }
                     else {
                         panic!("Unbound name: {}", name);
@@ -414,6 +414,7 @@ fn assemble(asm_path: &Path) -> String {
         .create().expect("Could not create temp object file");
     let obj_path = obj_file.path();
     let cmd = Command::new("as")
+        .arg("--32")
         .arg("-o")
         .arg(obj_path)
         .arg(asm_path)
@@ -426,6 +427,7 @@ fn assemble(asm_path: &Path) -> String {
         .create().expect("Could not create temp binary file");
     let bin_path = bin_file.path();
     let cmd = Command::new("gcc")
+        .arg("-m32")
         .arg("-o")
         .arg(bin_path)
         .arg(obj_path)
