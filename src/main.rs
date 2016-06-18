@@ -314,8 +314,12 @@ impl Amd64Backend {
 
             "cons" => {
                 self.compile(&tail[0], environment);
-                emit!(self, "movl %eax, 0(%edi)");
+                let location1 = self.push();
                 self.compile(&tail[1], environment);
+                let location2 = self.push();
+                emit!(self, "movl {}(%esp), %eax", location1);
+                emit!(self, "movl %eax, 0(%edi)");
+                emit!(self, "movl {}(%esp), %eax", location2);
                 emit!(self, "movl %eax, 4(%edi)");
                 emit!(self, "movl %edi, %eax");
                 emit!(self, "orl $1, %eax");
