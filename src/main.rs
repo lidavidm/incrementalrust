@@ -233,6 +233,16 @@ impl Amd64Backend {
                 self.compile(&tail[0], environment);
                 emit!(self, "xorl $128, %eax");
             }
+
+            "car" => {
+                self.compile(&tail[0], environment);
+                emit!(self, "movl -1(%eax), %eax");
+            }
+
+            "cdr" => {
+                self.compile(&tail[0], environment);
+                emit!(self, "movl 3(%eax), %eax");
+            }
         );
 
         Ok(true)
@@ -607,46 +617,46 @@ mod test {
 
     #[test]
     fn eq_p() {
-        // let maxint = format!("{}", MAX_INT);
-        // let items = vec!["()", "0", &maxint, "#t", "#f", "#\\a", "#\\newline"];
-        // for a in items.iter() {
-        //     for b in items.iter() {
-        //         assert_eq!(compile_and_execute(&format!("(= {} {})", a, b)), if a == b {
-        //             "#t"
-        //         } else {
-        //             "#f"
-        //         });
-        //     }
-        // }
+        let maxint = format!("{}", MAX_INT);
+        let items = vec!["()", "0", &maxint, "#t", "#f", "#\\a", "#\\newline"];
+        for a in items.iter() {
+            for b in items.iter() {
+                assert_eq!(compile_and_execute(&format!("(= {} {})", a, b)), if a == b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+            }
+        }
     }
 
     #[test]
     fn comparison_p() {
-        // let items = vec![0, -10, MIN_INT, MAX_INT, 1];
-        // for a in items.iter() {
-        //     for b in items.iter() {
-        //         assert_eq!(compile_and_execute(&format!("(> {} {})", a, b)), if a > b {
-        //             "#t"
-        //         } else {
-        //             "#f"
-        //         });
-        //         assert_eq!(compile_and_execute(&format!("(< {} {})", a, b)), if a < b {
-        //             "#t"
-        //         } else {
-        //             "#f"
-        //         });
-        //         assert_eq!(compile_and_execute(&format!("(>= {} {})", a, b)), if a >= b {
-        //             "#t"
-        //         } else {
-        //             "#f"
-        //         });
-        //         assert_eq!(compile_and_execute(&format!("(<= {} {})", a, b)), if a <= b {
-        //             "#t"
-        //         } else {
-        //             "#f"
-        //         });
-        //     }
-        // }
+        let items = vec![0, -10, MIN_INT, MAX_INT, 1];
+        for a in items.iter() {
+            for b in items.iter() {
+                assert_eq!(compile_and_execute(&format!("(> {} {})", a, b)), if a > b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(< {} {})", a, b)), if a < b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(>= {} {})", a, b)), if a >= b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+                assert_eq!(compile_and_execute(&format!("(<= {} {})", a, b)), if a <= b {
+                    "#t"
+                } else {
+                    "#f"
+                });
+            }
+        }
     }
 
     #[test]
@@ -667,5 +677,15 @@ mod test {
         assert_eq!(compile_and_execute("(if (= 2 (+ 1 1)) 2 3)"), "2");
         assert_eq!(compile_and_execute("(if (= 2 (+ 1 1)) #f 3)"), "#f");
         assert_eq!(compile_and_execute("(let (a 2) (b 3) (if (> a b) 3 5))"), "5");
+    }
+
+    #[test]
+    fn cons_car_cdr() {
+        assert_eq!(compile_and_execute("(cons 10 20)"), "(10 20)");
+        assert_eq!(compile_and_execute("(cons 10 ())"), "(10 ())");
+        assert_eq!(compile_and_execute("(let (a (cons 10 20)) (car a))"), "10");
+        assert_eq!(compile_and_execute("(let (a (cons 10 20)) (cdr a))"), "20");
+        assert_eq!(compile_and_execute("(let (a (cons 10 (cons 20 ()))) (car (cdr a)))"), "20");
+        assert_eq!(compile_and_execute("(let (a (cons 10 (cons 20 ()))) (cdr (cdr a)))"), "()");
     }
 }
