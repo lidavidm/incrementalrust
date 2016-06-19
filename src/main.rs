@@ -1,7 +1,7 @@
 extern crate sexp;
 extern crate tempfile;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -22,6 +22,7 @@ type Result<T> = std::result::Result<T, CompileError>;
 
 struct Environment<'a> {
     bindings: HashMap<String, isize>,
+    labels: HashSet<String>,
     containing_env: Option<&'a Environment<'a>>,
 }
 
@@ -29,6 +30,7 @@ impl<'a> Environment<'a> {
     fn new() -> Environment<'a> {
         Environment {
             bindings: HashMap::new(),
+            labels: HashSet::new(),
             containing_env: None,
         }
     }
@@ -36,6 +38,7 @@ impl<'a> Environment<'a> {
     fn new_under(env: &'a Environment<'a>) -> Environment<'a> {
         Environment {
             bindings: HashMap::new(),
+            labels: HashSet::new(),
             containing_env: Some(env),
         }
     }
@@ -49,6 +52,14 @@ impl<'a> Environment<'a> {
 
     fn update(&mut self, key: &str, location: isize) {
         self.bindings.insert(key.to_owned(), location);
+    }
+
+    fn add_label(&mut self, label: &str) {
+        self.labels.insert(label.to_owned());
+    }
+
+    fn check_label(&self, label: &str) -> bool {
+        self.labels.contains(label)
     }
 }
 
@@ -375,6 +386,7 @@ impl Amd64Backend {
 
                     }
                     else if arg == "let" {
+                        // TODO: factor this out so it can be used for labels form as well
                         let environment = &mut Environment::new_under(environment);
                         let (bindings, expr) = tail.split_at(tail.len() - 1);
                         for item in bindings {
@@ -438,6 +450,8 @@ impl Amd64Backend {
         emit!(self, "andl $0xfffffff8, %edi");
 
         let mut environment = Environment::new();
+
+        // TODO: Handle labels
         self.compile(sexp, &mut environment);
 
         emit!(self, "ret");
