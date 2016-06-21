@@ -193,6 +193,10 @@ enum Comparison {
     Geq,
 }
 
+struct Stack {
+    stack_location: usize,
+}
+
 struct Amd64Backend {
     buffer: String,
     stack_location: usize,
@@ -242,6 +246,7 @@ impl Amd64Backend {
         label
     }
 
+    // TODO: move these to methods of Stack
     fn push(&mut self) -> isize {
         let location = self.peek();
         emit!(self, "movl %eax, {}(%esp)", location);
@@ -254,6 +259,18 @@ impl Amd64Backend {
     }
 
     fn pop(&mut self) {
+        self.stack_location -= 1;
+        if self.stack_location < 1 {
+            panic!("Stack underflow");
+        }
+    }
+
+    // Adjust stack position
+    fn push_stack(&mut self) {
+
+    }
+
+    fn pop_stack(&mut self) {
 
     }
 
@@ -489,7 +506,20 @@ impl Amd64Backend {
                     }
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
+                            // TODO: arguments
+                            for arg in args.iter() {
+                                self.compile(arg, environment);
+                                self.push();
+                            }
+
+                            self.push_stack();
                             emit!(self, "call {}", label);
+                            self.pop_stack();
+                            // pop arguments
+                            for arg in args.iter() {
+                                self.pop();
+                            }
+                            // emit_comment!(self, "Stack location: {}", self.stack_location);
                         }
                         else {
                             panic!("Label {} does not exist", label);
