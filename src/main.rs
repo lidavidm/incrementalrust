@@ -503,7 +503,14 @@ pub fn compile_program(sexp: &Sexp) -> String {
 }
 
 
-fn assemble(asm_path: &Path) -> String {
+fn assemble(input: &str, bin_path: &Path) {
+    let source = compile_program(&parse(input).unwrap());
+    let mut f = tempfile::NamedTempFile::new().expect("Could not create temp file");
+    f.write_all(&source.into_bytes()).expect("Could not write generated asm to test file");
+    f.sync_all().expect("Could not sync test file");
+
+    let asm_path = f.path();
+
     let obj_file = tempfile::NamedTempFileOptions::new()
         .prefix("incrementalrust")
         .suffix(".o")
@@ -517,11 +524,6 @@ fn assemble(asm_path: &Path) -> String {
         .status().expect("Could not assemble");
     assert!(cmd.success());
 
-    let bin_file = tempfile::NamedTempFileOptions::new()
-        .prefix("incrementalrust")
-        .suffix(".bin")
-        .create().expect("Could not create temp binary file");
-    let bin_path = bin_file.path();
     let cmd = Command::new("gcc")
         .arg("-m32")
         .arg("-o")
@@ -530,6 +532,15 @@ fn assemble(asm_path: &Path) -> String {
         .arg("driver.c")
         .status().expect("Could not compile");
     assert!(cmd.success());
+}
+
+pub fn compile_and_execute(input: &str) -> String {
+    let bin_file = tempfile::NamedTempFileOptions::new()
+        .prefix("incrementalrust")
+        .suffix(".bin")
+        .create().expect("Could not create temp binary file");
+    let bin_path = bin_file.path();
+    assemble(input, bin_path);
 
     let actual_bin_path = bin_path.with_extension("exec");
     fs::copy(bin_path, &actual_bin_path).expect("Could not copy file!");
@@ -544,14 +555,6 @@ fn assemble(asm_path: &Path) -> String {
     fs::remove_file(&actual_bin_path).expect("Could not remove temp file!");
 
     result
-}
-
-pub fn compile_and_execute(input: &str) -> String {
-    let source = compile_program(&parse(input).unwrap());
-    let mut f = tempfile::NamedTempFile::new().expect("Could not create temp file");
-    f.write_all(&source.into_bytes()).expect("Could not write generated asm to test file");
-    f.sync_all().expect("Could not sync test file");
-    assemble(f.path())
 }
 
 fn main() {
@@ -573,7 +576,8 @@ fn main() {
             Ok(_) => (),
         };
 
-        println!("{}", compile_and_execute(&s));
+        let output_path = path.with_extension("exec");
+        assemble(&s, &output_path);
 
         return;
     }
