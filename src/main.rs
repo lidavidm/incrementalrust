@@ -103,13 +103,12 @@ macro_rules! try_or_panic {
     }
 }
 
-// TODO: add funcall form
 enum Form<'a> {
     UnaryPrimitive(&'a str, &'a Sexp),
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
     LetLike(&'a str, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
-    Funcall(&'a str, &'a [Sexp]),
+    Labelcall(&'a str, &'a [Sexp]),
 }
 
 #[derive(Debug)]
@@ -117,7 +116,7 @@ enum FormError<'a> {
     InvalidForm(&'a Sexp),
     InvalidBinding(&'a Sexp),
     InvalidIf(&'a Sexp),
-    InvalidFuncall(&'a Sexp, String),
+    InvalidLabelcall(&'a Sexp, String),
     NumArgs(&'a Sexp),
 }
 
@@ -158,16 +157,16 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
 
                     return Ok(Form::If(cond, true_branch, false_branch));
                 }
-                else if construct == "funcall" {
+                else if construct == "labelcall" {
                     if tail.is_empty() {
-                        return Err(FormError::InvalidFuncall(sexp, "No label specified".to_owned()));
+                        return Err(FormError::InvalidLabelcall(sexp, "No label specified".to_owned()));
                     }
                     let (label, args) = tail.split_at(1);
                     if let Sexp::Atom(Atom::N(ref label)) = label[0] {
-                        return Ok(Form::Funcall(label, args));
+                        return Ok(Form::Labelcall(label, args));
                     }
                     else {
-                        return Err(FormError::InvalidFuncall(sexp, "Invalid label".to_owned()));
+                        return Err(FormError::InvalidLabelcall(sexp, "Invalid label".to_owned()));
                     }
                 }
                 else if tail.len() == 1 {
@@ -488,7 +487,7 @@ impl Amd64Backend {
                         self.compile(false_branch, environment);
                         emit_label!(self, label1);
                     }
-                    Ok(Form::Funcall(label, args)) => {
+                    Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
                             emit!(self, "jmp {}", label);
                         }
