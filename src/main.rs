@@ -103,6 +103,7 @@ macro_rules! try_or_panic {
     }
 }
 
+// TODO: add funcall form
 enum Form<'a> {
     UnaryPrimitive(&'a str, &'a Sexp),
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
@@ -192,7 +193,6 @@ impl Amd64Backend {
         buffer.push_str("\t.p2align 4,,15\n");
         buffer.push_str(".globl scheme_entry\n");
         buffer.push_str("\t.type scheme_entry, @function\n");
-        buffer.push_str("scheme_entry:\n");
         Amd64Backend {
             buffer: buffer,
             stack_location: 1,
@@ -482,17 +482,41 @@ impl Amd64Backend {
         &self.buffer
     }
 
-    fn compile_program(&mut self, sexp: &Sexp) -> &str {
+    fn compile_main(&mut self, sexp: &Sexp, environment: &mut Environment) {
+        self.buffer.push_str("scheme_entry:\n");
         // Align rdi (base of heap) to 8-byte boundary
         emit!(self, "addl $7, %edi");
         emit!(self, "andl $0xfffffff8, %edi");
 
+        self.compile(sexp, environment);
+        emit!(self, "ret");
+    }
+
+    fn compile_program(&mut self, sexp: &Sexp) -> &str {
         let mut environment = Environment::new();
 
         // TODO: Handle labels
-        self.compile(sexp, &mut environment);
 
-        emit!(self, "ret");
+        if let Ok(Form::LetLike("labels", bindings, expr)) = parse_form(sexp) {
+            for (name, value) in bindings {
+                if let Sexp::Atom(Atom::N(ref name)) = *name {
+                    self.buffer.push_str(name);
+                    self.buffer.push_str(":\n");
+                    self.compile(value, &mut environment);
+                    emit!(self, "ret");
+                    environment.add_label(name);
+                }
+                else {
+                    panic!("Invalid name in labels expression: {}", name);
+                }
+            }
+
+            self.compile_main(expr, &mut environment);
+        }
+        else {
+            self.compile_main(sexp, &mut environment);
+        }
+
         &self.buffer
     }
 }
