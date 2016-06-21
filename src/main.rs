@@ -555,7 +555,29 @@ pub fn compile_and_execute(input: &str) -> String {
 }
 
 fn main() {
-    use std::io::{self, BufRead};
+    use std::fs::File;
+    use std::io::{self, BufRead, Read};
+    use std::path::Path;
+
+    if std::env::args().count() > 1 {
+        let arg = std::env::args().nth(1).unwrap();
+        let path = Path::new(&arg);
+        let mut file = match File::open(&path) {
+            Err(e) => panic!("Couldn't open {}: {:?}", path.display(), e),
+            Ok(f) => f,
+        };
+
+        let mut s = String::new();
+        match file.read_to_string(&mut s) {
+            Err(e) => panic!("Couldn't open {}: {:?}", path.display(), e),
+            Ok(_) => (),
+        };
+
+        println!("{}", compile_and_execute(&s));
+
+        return;
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     let handle = stdin.lock();
