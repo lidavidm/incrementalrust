@@ -489,7 +489,7 @@ impl Amd64Backend {
                     }
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
-                            emit!(self, "jmp {}", label);
+                            emit!(self, "call {}", label);
                         }
                         else {
                             panic!("Label {} does not exist", label);
