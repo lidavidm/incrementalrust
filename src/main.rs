@@ -16,6 +16,7 @@ pub const MAX_INT: i64 = 536870911; // i32::pow(2, 29) - 1
 enum CompileError {
     // Procedure, expected, actual
     NumArgs(String, usize, usize),
+    UnknownPrimitive(String),
 }
 
 type Result<T> = std::result::Result<T, CompileError>;
@@ -78,19 +79,16 @@ macro_rules! emit_label {
 }
 
 macro_rules! primitives {
-    ($self_: ident, $expected: expr, $op: ident, $tail: ident, $($pat: pat => $result: expr)*) => {{
+    ($self_: ident, $op: ident, $($pat: pat => $result: expr)*) => {{
         match $op {
             $(
                 $pat => {
-                    if $tail.len() != $expected {
-                        return Err(CompileError::NumArgs($op.to_owned(), $expected, $tail.len()));
-                    }
-
-                    $result
+                    $result;
+                    Ok(())
                 }
             ),*
                 _ => {
-                    return Ok(false);
+                    Err(CompileError::UnknownPrimitive($op.to_owned()))
                 }
         }
     }}
@@ -103,6 +101,74 @@ macro_rules! try_or_panic {
             Err(e) => panic!("{:?}", e),
         }
     }
+}
+
+enum Form<'a> {
+    UnaryPrimitive(&'a str, &'a Sexp),
+    BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
+    LetLike(&'a str, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
+    If(&'a Sexp, &'a Sexp, &'a Sexp)
+}
+
+#[derive(Debug)]
+enum FormError<'a> {
+    InvalidForm(&'a Sexp),
+    InvalidBinding(&'a Sexp),
+    InvalidIf(&'a Sexp),
+    NumArgs(&'a Sexp),
+}
+
+fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
+    if let Sexp::List(ref items) = *sexp {
+        if !items.is_empty() {
+            let (head, tail) = items.split_at(1);
+            if let Sexp::Atom(Atom::N(ref construct)) = head[0] {
+                if construct == "let" || construct == "labels" {
+                    let (bindings, expr) = tail.split_at(tail.len() - 1);
+                    let mut result = vec![];
+
+                    for item in bindings {
+                        if let Sexp::List(ref items) = *item {
+                            if items.len() != 2 {
+                                return Err(FormError::InvalidBinding(item))
+                            }
+
+                            let name = &items[0];
+                            let value = &items[1];
+
+                            result.push((name, value));
+                        }
+                        else {
+                            return Err(FormError::InvalidBinding(item))
+                        }
+                    }
+
+                    return Ok(Form::LetLike(construct, result, &expr[0]));
+                }
+                else if construct == "if" {
+                    if tail.len() != 3 {
+                        return Err(FormError::InvalidIf(sexp));
+                    }
+                    let cond = &tail[0];
+                    let true_branch = &tail[1];
+                    let false_branch = &tail[2];
+
+                    return Ok(Form::If(cond, true_branch, false_branch));
+                }
+                else if tail.len() == 1 {
+                    return Ok(Form::UnaryPrimitive(construct, &tail[0]));
+                }
+                else if tail.len() == 2 {
+                    return Ok(Form::BinaryPrimitive(construct, &tail[0], &tail[1]));
+                }
+                else {
+                    return Err(FormError::NumArgs(sexp));
+                }
+            }
+        }
+    }
+
+    Err(FormError::InvalidForm(sexp))
 }
 
 enum Comparison {
@@ -194,139 +260,137 @@ impl Amd64Backend {
         emit!(self, "orl $31, %eax");
     }
 
-    fn compile_unary_primitive(&mut self, op: &str, tail: &[Sexp], environment: &mut Environment) -> Result<bool> {
-        primitives!(self, 1, op, tail,
+    fn compile_unary_primitive(&mut self, op: &str, arg: &Sexp, environment: &mut Environment) -> Result<()> {
+        primitives!(self, op,
             "add1" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "addl ${}, %eax", Self::immediate_rep(&Atom::I(1)));
             }
 
             "char->integer" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 // TODO: check the tag first
                 emit!(self, "shr $6, %eax");
             }
 
             "integer->char" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "shl $6, %eax");
                 emit!(self, "orl $15, %eax");
             }
 
             "null?" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "andl $255, %eax");
                 emit!(self, "cmpl $47, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "zero?" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "cmpl $0, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "integer?" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "andl $3, %eax");
                 emit!(self, "cmpl $0, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "boolean?" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "andl $127, %eax");
                 emit!(self, "cmpl $31, %eax");
                 self.emit_boolean(Comparison::Eq);
             }
 
             "not" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "xorl $128, %eax");
             }
 
             "car" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "movl -1(%eax), %eax");
             }
 
             "cdr" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg, environment);
                 emit!(self, "movl 3(%eax), %eax");
             }
-        );
-
-        Ok(true)
+        )
     }
 
-    fn compile_binary_primitive(&mut self, op: &str, tail: &[Sexp], environment: &mut Environment) -> Result<bool> {
-        primitives!(self, 2, op, tail,
+    fn compile_binary_primitive(&mut self, op: &str, arg1: &Sexp, arg2: &Sexp, environment: &mut Environment) -> Result<()> {
+        primitives!(self, op,
             "+" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "addl {}(%esp), %eax", location);
             }
 
             "-" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "subl {}(%esp), %eax", location);
             }
 
             "*" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "imull {}(%esp), %eax", location);
                 emit!(self, "sarl $2, %eax");
             }
 
             "=" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Eq);
             }
 
             "<" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Lt);
             }
 
             ">" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Gt);
             }
 
             "<=" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Leq);
             }
 
             ">=" => {
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location = self.push();
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 emit!(self, "cmpl {}(%esp), %eax", location);
                 self.emit_boolean(Comparison::Geq);
             }
 
             "cons" => {
-                self.compile(&tail[0], environment);
+                self.compile(arg1, environment);
                 let location1 = self.push();
-                self.compile(&tail[1], environment);
+                self.compile(arg2, environment);
                 let location2 = self.push();
                 emit!(self, "movl {}(%esp), %eax", location1);
                 emit!(self, "movl %eax, 0(%edi)");
@@ -336,9 +400,7 @@ impl Amd64Backend {
                 emit!(self, "orl $1, %eax");
                 emit!(self, "addl $8, %edi");
             }
-        );
-
-        Ok(true)
+        )
     }
 
     fn compile(&mut self, sexp: &Sexp, environment: &mut Environment) -> &str {
@@ -376,28 +438,13 @@ impl Amd64Backend {
                 emit!(self, "movl ${}, %eax", 0b00101111);
             }
             else {
-                let (head, tail) = items.split_at(1);
-                if let Sexp::Atom(Atom::N(ref arg)) = head[0] {
-                    // TODO: make this less messy
-                    if try_or_panic!(self.compile_unary_primitive(arg, tail, environment)) {
-
-                    }
-                    else if try_or_panic!(self.compile_binary_primitive(arg, tail, environment)) {
-
-                    }
-                    else if arg == "let" {
-                        // TODO: factor this out so it can be used for labels form as well
-                        let environment = &mut Environment::new_under(environment);
-                        let (bindings, expr) = tail.split_at(tail.len() - 1);
-                        for item in bindings {
-                            if let Sexp::List(ref items) = *item {
-                                if items.len() != 2 {
-                                    panic!("Invalid binding in let expression: {}", item);
-                                }
-
-                                let name = &items[0];
-                                let value = &items[1];
-
+                match parse_form(sexp) {
+                    Ok(Form::UnaryPrimitive(name, arg1)) => try_or_panic!(self.compile_unary_primitive(name, arg1, environment)),
+                    Ok(Form::BinaryPrimitive(name, arg1, arg2)) => try_or_panic!(self.compile_binary_primitive(name, arg1, arg2, environment)),
+                    Ok(Form::LetLike(name, bindings, expr)) => {
+                        if name == "let" {
+                            let environment = &mut Environment::new_under(environment);
+                            for (name, value) in bindings {
                                 if let Sexp::Atom(Atom::N(ref name)) = *name {
                                     self.compile(value, environment);
                                     let location = self.push();
@@ -407,20 +454,13 @@ impl Amd64Backend {
                                     panic!("Invalid name in let expression: {}", name);
                                 }
                             }
-                            else {
-                                panic!("Invalid expression in let expression: {}", item);
-                            }
+                            self.compile(expr, environment);
                         }
-                        self.compile(&expr[0], environment);
+                        else {
+                            panic!("Unrecognized primitive: {}", name);
+                        }
                     }
-                    else if arg == "if" {
-                        if tail.len() != 3 {
-                            panic!("Invalid if statement form: {}", sexp);
-                        }
-                        let cond = &tail[0];
-                        let true_branch = &tail[1];
-                        let false_branch = &tail[2];
-
+                    Ok(Form::If(cond, true_branch, false_branch)) => {
                         let (label0, label1) = (self.make_label(), self.make_label());
 
                         self.compile(cond, environment);
@@ -434,9 +474,7 @@ impl Amd64Backend {
                         self.compile(false_branch, environment);
                         emit_label!(self, label1);
                     }
-                    else {
-                        panic!("Unrecognized primitive: {}", arg);
-                    }
+                    Err(err) => panic!("Error parsing form: {:?}", err),
                 }
             }
         }
