@@ -108,7 +108,8 @@ enum Form<'a> {
     UnaryPrimitive(&'a str, &'a Sexp),
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
     LetLike(&'a str, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
-    If(&'a Sexp, &'a Sexp, &'a Sexp)
+    If(&'a Sexp, &'a Sexp, &'a Sexp),
+    Funcall(&'a str, &'a [Sexp]),
 }
 
 #[derive(Debug)]
@@ -116,6 +117,7 @@ enum FormError<'a> {
     InvalidForm(&'a Sexp),
     InvalidBinding(&'a Sexp),
     InvalidIf(&'a Sexp),
+    InvalidFuncall(&'a Sexp, String),
     NumArgs(&'a Sexp),
 }
 
@@ -155,6 +157,18 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
                     let false_branch = &tail[2];
 
                     return Ok(Form::If(cond, true_branch, false_branch));
+                }
+                else if construct == "funcall" {
+                    if tail.is_empty() {
+                        return Err(FormError::InvalidFuncall(sexp, "No label specified".to_owned()));
+                    }
+                    let (label, args) = tail.split_at(1);
+                    if let Sexp::Atom(Atom::N(ref label)) = label[0] {
+                        return Ok(Form::Funcall(label, args));
+                    }
+                    else {
+                        return Err(FormError::InvalidFuncall(sexp, "Invalid label".to_owned()));
+                    }
                 }
                 else if tail.len() == 1 {
                     return Ok(Form::UnaryPrimitive(construct, &tail[0]));
@@ -473,6 +487,14 @@ impl Amd64Backend {
                         emit_label!(self, label0);
                         self.compile(false_branch, environment);
                         emit_label!(self, label1);
+                    }
+                    Ok(Form::Funcall(label, args)) => {
+                        if environment.check_label(label) {
+                            emit!(self, "jmp {}", label);
+                        }
+                        else {
+                            panic!("Label {} does not exist", label);
+                        }
                     }
                     Err(err) => panic!("Error parsing form: {:?}", err),
                 }
