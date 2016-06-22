@@ -193,13 +193,38 @@ enum Comparison {
     Geq,
 }
 
-struct Stack {
-    stack_location: usize,
+struct StackFrame {
+    location: usize,
+}
+
+impl StackFrame {
+    fn new() -> StackFrame {
+        StackFrame {
+            // Leave room for return address
+            location: 1,
+        }
+    }
+
+    fn push(&mut self) {
+        self.location += 1;
+    }
+
+    /// Get the offset from %esp
+    fn peek(&self) -> isize {
+        (-4) * (self.location as isize)
+    }
+
+    fn pop(&mut self) {
+        self.location -= 1;
+        if self.location < 1 {
+            panic!("Stack underflow");
+        }
+    }
 }
 
 struct Amd64Backend {
     buffer: String,
-    stack_location: usize,
+    stack: Vec<StackFrame>,
     label_counter: usize,
 }
 
@@ -210,9 +235,13 @@ impl Amd64Backend {
         buffer.push_str("\t.p2align 4,,15\n");
         buffer.push_str(".globl scheme_entry\n");
         buffer.push_str("\t.type scheme_entry, @function\n");
+
+        let mut stack = Vec::new();
+        stack.push(StackFrame::new());
+
         Amd64Backend {
             buffer: buffer,
-            stack_location: 1,
+            stack: stack,
             label_counter: 0,
         }
     }
@@ -246,23 +275,19 @@ impl Amd64Backend {
         label
     }
 
-    // TODO: move these to methods of Stack
     fn push(&mut self) -> isize {
         let location = self.peek();
         emit!(self, "movl %eax, {}(%esp)", location);
-        self.stack_location += 1;
+        self.stack.last_mut().unwrap().push();
         location
     }
 
     fn peek(&self) -> isize {
-        (-4) * (self.stack_location as isize)
+        self.stack.last().unwrap().peek()
     }
 
     fn pop(&mut self) {
-        self.stack_location -= 1;
-        if self.stack_location < 1 {
-            panic!("Stack underflow");
-        }
+        self.stack.last_mut().unwrap().pop()
     }
 
     // Adjust stack position
