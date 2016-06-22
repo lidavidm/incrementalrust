@@ -539,20 +539,18 @@ impl Amd64Backend {
                     }
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
-                            // TODO: arguments
+                            self.push_stack();
                             for arg in args.iter() {
                                 self.compile(arg, environment);
                                 self.push();
                             }
 
-                            self.push_stack();
                             emit!(self, "call {}", label);
                             self.pop_stack();
                             // pop arguments
                             for arg in args.iter() {
                                 self.pop();
                             }
-                            // emit_comment!(self, "Stack location: {}", self.stack_location);
                         }
                         else {
                             panic!("Label {} does not exist", label);
