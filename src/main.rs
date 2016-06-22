@@ -335,10 +335,7 @@ impl Amd64Backend {
         self.stack.last_mut().unwrap().pop()
     }
 
-    // Adjust stack position
     fn push_stack(&mut self) {
-        let frame_size = self.peek().abs();
-        emit!(self, "subl ${}, %esp", frame_size);
         self.stack.push(StackFrame::new());
     }
 
@@ -349,7 +346,7 @@ impl Amd64Backend {
         }
 
         let frame_size = self.peek().abs();
-        emit!(self, "addl ${}, %esp", frame_size);
+        emit!(self, "addl ${}, %esp", frame_size - 4);
     }
 
     // Emits the representation for true or false, based on the result
@@ -592,18 +589,19 @@ impl Amd64Backend {
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
                             emit_comment!(self, "call {}", label);
+
+                            let frame_size = self.peek().abs();
                             self.push_stack();
+                            emit_comment!(self, "Save slot for return code");
+                            self.push();
                             for arg in args.iter() {
                                 self.compile(arg, environment);
                                 self.push();
                             }
 
+                            emit!(self, "subl ${}, %esp", frame_size - 4);
                             emit!(self, "call {}", label);
                             self.pop_stack();
-                            // pop arguments
-                            for _ in args.iter() {
-                                self.pop();
-                            }
                         }
                         else {
                             panic!("Label {} does not exist", label);
@@ -645,13 +643,16 @@ impl Amd64Backend {
                             let mut label_env = Environment::new_under(&environment);
                             let mut offset = -4;
                             for arg in arguments {
+                                emit_comment!(self, "Argument to {}: {}", name, arg);
                                 label_env.update(arg, offset);
                                 offset -= 4;
+                                self.stack.last_mut().unwrap().location += 1;
                             }
 
                             self.compile(body, &mut label_env);
                             emit!(self, "ret");
                         }
+                        self.stack.last_mut().unwrap().location = 1;
                         environment.add_label(name);
                     }
                     else {
