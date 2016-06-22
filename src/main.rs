@@ -111,10 +111,18 @@ macro_rules! try_or_panic {
     }
 }
 
+#[derive(Copy,Debug,Clone)]
+enum BindingForm {
+    Let,
+    Labels,
+    Code,
+}
+
 enum Form<'a> {
     UnaryPrimitive(&'a str, &'a Sexp),
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
-    LetLike(&'a str, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
+    // TODO: make LetLike an enum
+    LetLike(BindingForm, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
     Labelcall(&'a str, &'a [Sexp]),
 }
@@ -133,7 +141,7 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
         if !items.is_empty() {
             let (head, tail) = items.split_at(1);
             if let Sexp::Atom(Atom::N(ref construct)) = head[0] {
-                if construct == "let" || construct == "labels" {
+                if construct == "let" || construct == "labels" || construct == "code" {
                     let (bindings, expr) = tail.split_at(tail.len() - 1);
                     let mut result = vec![];
 
@@ -153,7 +161,12 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
                         }
                     }
 
-                    return Ok(Form::LetLike(construct, result, &expr[0]));
+                    return Ok(Form::LetLike(match construct.as_ref() {
+                        "let" => BindingForm::Let,
+                        "labels" => BindingForm::Labels,
+                        "code" => BindingForm::Code,
+                        _ => unreachable!(),
+                    }, result, &expr[0]));
                 }
                 else if construct == "if" {
                     if tail.len() != 3 {
@@ -519,23 +532,23 @@ impl Amd64Backend {
                     Ok(Form::UnaryPrimitive(name, arg1)) => try_or_panic!(self.compile_unary_primitive(name, arg1, environment)),
                     Ok(Form::BinaryPrimitive(name, arg1, arg2)) => try_or_panic!(self.compile_binary_primitive(name, arg1, arg2, environment)),
                     Ok(Form::LetLike(name, bindings, expr)) => {
-                        if name == "let" {
-                            let environment = &mut Environment::new_under(environment);
-                            for (name, value) in bindings {
-                                if let Sexp::Atom(Atom::N(ref name)) = *name {
-                                    emit_comment!(self, "let {}", name);
-                                    self.compile(value, environment);
-                                    let location = self.push();
-                                    environment.update(name, location);
+                        match name {
+                            BindingForm::Let => {
+                                let environment = &mut Environment::new_under(environment);
+                                for (name, value) in bindings {
+                                    if let Sexp::Atom(Atom::N(ref name)) = *name {
+                                        emit_comment!(self, "let {}", name);
+                                        self.compile(value, environment);
+                                        let location = self.push();
+                                        environment.update(name, location);
+                                    }
+                                    else {
+                                        panic!("Invalid name in let expression: {}", name);
+                                    }
                                 }
-                                else {
-                                    panic!("Invalid name in let expression: {}", name);
-                                }
+                                self.compile(expr, environment);
                             }
-                            self.compile(expr, environment);
-                        }
-                        else {
-                            panic!("Unrecognized primitive: {}", name);
+                            _ => panic!("Invalid binding form: {:?}", name),
                         }
                     }
                     Ok(Form::If(cond, true_branch, false_branch)) => {
@@ -596,7 +609,7 @@ impl Amd64Backend {
 
         // TODO: Handle labels
 
-        if let Ok(Form::LetLike("labels", bindings, expr)) = parse_form(sexp) {
+        if let Ok(Form::LetLike(BindingForm::Labels, bindings, expr)) = parse_form(sexp) {
             for (name, value) in bindings {
                 if let Sexp::Atom(Atom::N(ref name)) = *name {
                     self.buffer.push_str(name);
