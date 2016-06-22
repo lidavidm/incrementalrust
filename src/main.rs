@@ -72,6 +72,14 @@ macro_rules! emit {
     }
 }
 
+macro_rules! emit_comment {
+    ($self_: ident, $comment: expr) => ($self_.buffer.push_str(&format!(concat!("\t# ", $comment, "\n"))));
+
+    ($self_: ident, $comment: expr, $($arg:tt)*) => {
+        $self_.buffer.push_str(&format!(concat!("\t# ", $comment, "\n"), $($arg)*));
+    }
+}
+
 macro_rules! emit_label {
     ($self_: ident, $label: expr) => {
         $self_.buffer.push_str(&format!("\t{}:\n", $label));
@@ -451,6 +459,7 @@ impl Amd64Backend {
             }
 
             "cons" => {
+                emit_comment!(self, "cons");
                 self.compile(arg1, environment);
                 let location1 = self.push();
                 self.compile(arg2, environment);
@@ -471,6 +480,7 @@ impl Amd64Backend {
             Sexp::Atom(ref atom) => {
                 if let Atom::N(ref name) = *atom {
                     if let Some(location) = environment.lookup(name) {
+                        emit_comment!(self, "name {}", name);
                         emit!(self, "movl {}(%esp), %eax", location);
                     }
                     else {
@@ -478,6 +488,8 @@ impl Amd64Backend {
                     }
                 }
                 else if let Atom::S(ref string) = *atom {
+                    emit_comment!(self, "string '{}'", string);
+
                     let bytes = string.to_owned().into_bytes();
                     emit!(self, "movl %edi, %eax");
                     emit!(self, "orl $0b011, %eax");
@@ -494,10 +506,12 @@ impl Amd64Backend {
                     }
                 }
                 else {
+                    emit_comment!(self, "literal {}", atom);
                     emit!(self, "movl ${}, %eax", Self::immediate_rep(atom));
                 }
             },
             Sexp::List(ref items) => if items.is_empty() {
+                emit_comment!(self, "literal nil");
                 emit!(self, "movl ${}, %eax", 0b00101111);
             }
             else {
@@ -509,6 +523,7 @@ impl Amd64Backend {
                             let environment = &mut Environment::new_under(environment);
                             for (name, value) in bindings {
                                 if let Sexp::Atom(Atom::N(ref name)) = *name {
+                                    emit_comment!(self, "let {}", name);
                                     self.compile(value, environment);
                                     let location = self.push();
                                     environment.update(name, location);
@@ -524,6 +539,7 @@ impl Amd64Backend {
                         }
                     }
                     Ok(Form::If(cond, true_branch, false_branch)) => {
+                        emit_comment!(self, "if");
                         let (label0, label1) = (self.make_label(), self.make_label());
 
                         self.compile(cond, environment);
@@ -539,6 +555,7 @@ impl Amd64Backend {
                     }
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
+                            emit_comment!(self, "call {}", label);
                             self.push_stack();
                             for arg in args.iter() {
                                 self.compile(arg, environment);
