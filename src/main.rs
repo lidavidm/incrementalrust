@@ -60,7 +60,7 @@ impl<'a> Environment<'a> {
     }
 
     fn check_label(&self, label: &str) -> bool {
-        self.labels.contains(label)
+        self.containing_env.map_or(self.labels.contains(label), |env| env.check_label(label))
     }
 }
 
