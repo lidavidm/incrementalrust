@@ -292,11 +292,19 @@ impl Amd64Backend {
 
     // Adjust stack position
     fn push_stack(&mut self) {
-
+        let frame_size = self.peek().abs();
+        emit!(self, "subl ${}, %esp", frame_size);
+        self.stack.push(StackFrame::new());
     }
 
     fn pop_stack(&mut self) {
+        self.stack.pop();
+        if self.stack.is_empty() {
+            panic!("Stack underflow");
+        }
 
+        let frame_size = self.peek().abs();
+        emit!(self, "addl ${}, %esp", frame_size);
     }
 
     // Emits the representation for true or false, based on the result
