@@ -967,4 +967,11 @@ mod test {
         assert_eq!(compile_and_execute("\"Hello, world!\""), "\"Hello, world!\"");
         assert_eq!(compile_and_execute("(cons 20 \"Hello, world!\")"), "(20 \"Hello, world!\")");
     }
+
+    #[test]
+    fn labelcalls() {
+        assert_eq!(compile_and_execute("(labels (a (code (x) x)) (labelcall a 2))"), "2");
+        assert_eq!(compile_and_execute("(labels (a (code (x) (+ x 1))) (b (code (x y) (+ (labelcall a x) y))) (labelcall b 21 20))"), "42");
+        assert_eq!(compile_and_execute("(labels (a (code (x) \"Hello, world!\")) (labelcall a 2))"), "\"Hello, world!\"");
+    }
 }
