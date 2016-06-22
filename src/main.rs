@@ -344,9 +344,6 @@ impl Amd64Backend {
         if self.stack.is_empty() {
             panic!("Stack underflow");
         }
-
-        let frame_size = self.peek().abs();
-        emit!(self, "addl ${}, %esp", frame_size - 4);
     }
 
     // Emits the representation for true or false, based on the result
@@ -591,7 +588,6 @@ impl Amd64Backend {
                             emit_comment!(self, "call {}", label);
 
                             let frame_size = self.peek().abs();
-                            self.push_stack();
                             emit_comment!(self, "Save slot for return code");
                             self.push();
                             for arg in args.iter() {
@@ -599,9 +595,11 @@ impl Amd64Backend {
                                 self.push();
                             }
 
+                            self.push_stack();
                             emit!(self, "subl ${}, %esp", frame_size - 4);
                             emit!(self, "call {}", label);
                             self.pop_stack();
+                            emit!(self, "addl ${}, %esp", frame_size - 4);
                         }
                         else {
                             panic!("Label {} does not exist", label);
