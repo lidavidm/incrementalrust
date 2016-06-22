@@ -31,6 +31,7 @@ impl<'a> Environment<'a> {
     fn new() -> Environment<'a> {
         Environment {
             bindings: HashMap::new(),
+            // TODO: map label to bookkeeping of args
             labels: HashSet::new(),
             containing_env: None,
         }
@@ -115,14 +116,15 @@ macro_rules! try_or_panic {
 enum BindingForm {
     Let,
     Labels,
-    Code,
 }
 
+#[derive(Debug)]
 enum Form<'a> {
     UnaryPrimitive(&'a str, &'a Sexp),
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
-    // TODO: make LetLike an enum
     LetLike(BindingForm, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
+    // Body of a label
+    Code(Vec<&'a str>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
     Labelcall(&'a str, &'a [Sexp]),
 }
@@ -133,6 +135,7 @@ enum FormError<'a> {
     InvalidBinding(&'a Sexp),
     InvalidIf(&'a Sexp),
     InvalidLabelcall(&'a Sexp, String),
+    InvalidCode(&'a Sexp, String),
     NumArgs(&'a Sexp),
 }
 
@@ -141,7 +144,7 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
         if !items.is_empty() {
             let (head, tail) = items.split_at(1);
             if let Sexp::Atom(Atom::N(ref construct)) = head[0] {
-                if construct == "let" || construct == "labels" || construct == "code" {
+                if construct == "let" || construct == "labels" {
                     let (bindings, expr) = tail.split_at(tail.len() - 1);
                     let mut result = vec![];
 
@@ -164,9 +167,30 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
                     return Ok(Form::LetLike(match construct.as_ref() {
                         "let" => BindingForm::Let,
                         "labels" => BindingForm::Labels,
-                        "code" => BindingForm::Code,
                         _ => unreachable!(),
                     }, result, &expr[0]));
+                }
+                else if construct == "code" {
+                    if tail.len() != 2 {
+                        return Err(FormError::InvalidCode(sexp, "Code form is incorrect".to_owned()));
+                    }
+                    let arguments = if let Sexp::List(ref arguments) = tail[0] {
+                        arguments
+                    } else {
+                        return Err(FormError::InvalidCode(sexp, "Invalid arguments list".to_owned()));
+                    };
+                    let body = &tail[1];
+                    let mut result = Vec::new();
+                    for arg in arguments.iter() {
+                        if let Sexp::Atom(Atom::N(ref arg)) = *arg {
+                            result.push((*arg).as_ref());
+                        }
+                        else {
+                            return Err(FormError::InvalidCode(sexp, format!("Code form argument {} is incorrect", arg)));
+                        }
+                    }
+
+                    return Ok(Form::Code(result, body));
                 }
                 else if construct == "if" {
                     if tail.len() != 3 {
@@ -311,10 +335,7 @@ impl Amd64Backend {
         self.stack.last_mut().unwrap().pop()
     }
 
-    // Adjust stack position
     fn push_stack(&mut self) {
-        let frame_size = self.peek().abs();
-        emit!(self, "subl ${}, %esp", frame_size);
         self.stack.push(StackFrame::new());
     }
 
@@ -323,9 +344,6 @@ impl Amd64Backend {
         if self.stack.is_empty() {
             panic!("Stack underflow");
         }
-
-        let frame_size = self.peek().abs();
-        emit!(self, "addl ${}, %esp", frame_size);
     }
 
     // Emits the representation for true or false, based on the result
@@ -556,7 +574,6 @@ impl Amd64Backend {
                         let (label0, label1) = (self.make_label(), self.make_label());
 
                         self.compile(cond, environment);
-                        // TODO: don't hardcode - use immediate_rep
                         emit!(self, "cmpl ${}, %eax", Self::immediate_rep(&Atom::B(false)));
                         emit!(self, "je {}", label0);
                         // Need unique label generation, plus jumps
@@ -569,22 +586,27 @@ impl Amd64Backend {
                     Ok(Form::Labelcall(label, args)) => {
                         if environment.check_label(label) {
                             emit_comment!(self, "call {}", label);
-                            self.push_stack();
+
+                            let frame_size = self.peek().abs();
+                            emit_comment!(self, "Save slot for return code");
+                            self.push();
                             for arg in args.iter() {
                                 self.compile(arg, environment);
                                 self.push();
                             }
 
+                            self.push_stack();
+                            emit!(self, "subl ${}, %esp", frame_size - 4);
                             emit!(self, "call {}", label);
                             self.pop_stack();
-                            // pop arguments
-                            for arg in args.iter() {
-                                self.pop();
-                            }
+                            emit!(self, "addl ${}, %esp", frame_size - 4);
                         }
                         else {
                             panic!("Label {} does not exist", label);
                         }
+                    }
+                    Ok(Form::Code(_, _)) => {
+                        panic!("Code form not allowed outside of labels form");
                     }
                     Err(err) => panic!("Error parsing form: {:?}", err),
                 }
@@ -607,16 +629,33 @@ impl Amd64Backend {
     fn compile_program(&mut self, sexp: &Sexp) -> &str {
         let mut environment = Environment::new();
 
-        // TODO: Handle labels
-
         if let Ok(Form::LetLike(BindingForm::Labels, bindings, expr)) = parse_form(sexp) {
+            // TODO: only allow code form as label value
             for (name, value) in bindings {
                 if let Sexp::Atom(Atom::N(ref name)) = *name {
-                    self.buffer.push_str(name);
-                    self.buffer.push_str(":\n");
-                    self.compile(value, &mut environment);
-                    emit!(self, "ret");
-                    environment.add_label(name);
+                    let form = parse_form(value);
+                    if let Ok(Form::Code(arguments, body)) = form {
+                        self.buffer.push_str(name);
+                        self.buffer.push_str(":\n");
+                        {
+                            let mut label_env = Environment::new_under(&environment);
+                            let mut offset = -4;
+                            for arg in arguments {
+                                emit_comment!(self, "Argument to {}: {}", name, arg);
+                                label_env.update(arg, offset);
+                                offset -= 4;
+                                self.stack.last_mut().unwrap().location += 1;
+                            }
+
+                            self.compile(body, &mut label_env);
+                            emit!(self, "ret");
+                        }
+                        self.stack.last_mut().unwrap().location = 1;
+                        environment.add_label(name);
+                    }
+                    else {
+                        panic!("Invalid body of label (must be code form): {}. Reason: {:?}", value, form);
+                    }
                 }
                 else {
                     panic!("Invalid name in labels expression: {}", name);
