@@ -623,8 +623,28 @@ impl Amd64Backend {
                         panic!("Code form not allowed outside of labels form");
                     }
                     Ok(Form::Closure(label, closed_over)) => {
+                        emit_comment!(self, "Closure over label {}", label);
+                        let mut offset = 4;
+                        let mut locations = Vec::new();
+                        for value in closed_over {
+                            self.compile(value, environment);
+                            locations.push(self.push());
+                        }
+
                         emit!(self, "lea {}, %eax", label);
                         emit!(self, "movl %eax, 0(%esi)");
+                        for location in locations.iter() {
+                            emit!(self, "movl {}(%esp), %eax", location);
+                            emit!(self, "movl %eax, {}(%esi)", offset);
+                            offset += 4;
+                        }
+
+                        let mut words = locations.len() + 1;
+                        if words % 2 == 1 {
+                            words += 1;
+                        }
+                        emit!(self, "addl ${}, %esi", 4 * words);
+
                         emit!(self, "movl %esi, %eax");
                         emit!(self, "orl $6, %eax");
                     }
