@@ -127,6 +127,8 @@ enum Form<'a> {
     Code(Vec<&'a str>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
     Labelcall(&'a str, &'a [Sexp]),
+    // Funcall(&'a Sexp, &'a [Sexp]),
+    Closure(&'a str, &'a [Sexp]),
 }
 
 #[derive(Debug)]
@@ -191,6 +193,18 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
                     }
 
                     return Ok(Form::Code(result, body));
+                }
+                else if construct == "closure" {
+                    if tail.len() < 1 {
+                        return Err(FormError::InvalidCode(sexp, "Code form is incorrect".to_owned()));
+                    }
+                    let (label, closed_over) = tail.split_at(1);
+                    let label = if let Sexp::Atom(Atom::N(ref label)) = label[0] {
+                        label
+                    } else {
+                        return Err(FormError::InvalidCode(sexp, "Invalid arguments list".to_owned()));
+                    };
+                    return Ok(Form::Closure(label, closed_over));
                 }
                 else if construct == "if" {
                     if tail.len() != 3 {
@@ -607,6 +621,12 @@ impl Amd64Backend {
                     }
                     Ok(Form::Code(_, _)) => {
                         panic!("Code form not allowed outside of labels form");
+                    }
+                    Ok(Form::Closure(label, closed_over)) => {
+                        emit!(self, "lea {}, %eax", label);
+                        emit!(self, "movl %eax, 0(%esi)");
+                        emit!(self, "movl %esi, %eax");
+                        emit!(self, "orl $6, %eax");
                     }
                     Err(err) => panic!("Error parsing form: {:?}", err),
                 }
