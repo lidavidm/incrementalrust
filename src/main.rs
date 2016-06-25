@@ -21,8 +21,14 @@ enum CompileError {
 
 type Result<T> = std::result::Result<T, CompileError>;
 
+#[derive(Copy,Clone,Debug)]
+enum Location {
+    Stack,
+    Closure,
+}
+
 struct Environment<'a> {
-    bindings: HashMap<String, isize>,
+    bindings: HashMap<String, (isize, Location)>,
     labels: HashSet<String>,
     containing_env: Option<&'a Environment<'a>>,
 }
@@ -45,15 +51,20 @@ impl<'a> Environment<'a> {
         }
     }
 
-    fn lookup(&self, key: &str) -> Option<isize> {
+    fn lookup(&self, key: &str) -> Option<(isize, Location)> {
         match self.bindings.get(key) {
             Some(x) => Some(*x),
             None => self.containing_env.and_then(|env| env.lookup(key)),
         }
     }
 
-    fn update(&mut self, key: &str, location: isize) {
-        self.bindings.insert(key.to_owned(), location);
+    fn update(&mut self, key: &str, offset: isize) {
+        self.bindings.insert(key.to_owned(), (offset, Location::Stack));
+    }
+
+    fn update_closure(&mut self, key: &str, offset: isize) {
+        // TODO: precedence rules in case of overlap?
+        self.bindings.insert(key.to_owned(), (offset, Location::Closure));
     }
 
     fn add_label(&mut self, label: &str) {
@@ -124,7 +135,7 @@ enum Form<'a> {
     BinaryPrimitive(&'a str, &'a Sexp, &'a Sexp),
     LetLike(BindingForm, Vec<(&'a Sexp, &'a Sexp)>, &'a Sexp),
     // Body of a label
-    Code(Vec<&'a str>, &'a Sexp),
+    Code(Vec<&'a str>, Vec<&'a str>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
     Labelcall(&'a str, &'a [Sexp]),
     // Funcall(&'a Sexp, &'a [Sexp]),
@@ -173,26 +184,44 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
                     }, result, &expr[0]));
                 }
                 else if construct == "code" {
-                    if tail.len() != 2 {
+                    if tail.len() != 3 {
                         return Err(FormError::InvalidCode(sexp, "Code form is incorrect".to_owned()));
                     }
+
+                    // TODO: clean this up
                     let arguments = if let Sexp::List(ref arguments) = tail[0] {
                         arguments
                     } else {
                         return Err(FormError::InvalidCode(sexp, "Invalid arguments list".to_owned()));
                     };
-                    let body = &tail[1];
-                    let mut result = Vec::new();
+                    let closed_over = if let Sexp::List(ref closed) = tail[1] {
+                        closed
+                    } else {
+                        return Err(FormError::InvalidCode(sexp, "Invalid closure variables list".to_owned()));
+                    };
+
+                    let body = &tail[2];
+                    let mut args_list = Vec::new();
+                    let mut closed_list = Vec::new();
                     for arg in arguments.iter() {
                         if let Sexp::Atom(Atom::N(ref arg)) = *arg {
-                            result.push((*arg).as_ref());
+                            args_list.push((*arg).as_ref());
                         }
                         else {
                             return Err(FormError::InvalidCode(sexp, format!("Code form argument {} is incorrect", arg)));
                         }
                     }
 
-                    return Ok(Form::Code(result, body));
+                    for arg in closed_over {
+                        if let Sexp::Atom(Atom::N(ref arg)) = *arg {
+                            closed_list.push((*arg).as_ref());
+                        }
+                        else {
+                            return Err(FormError::InvalidCode(sexp, format!("Code form closure variable {} is incorrect", arg)));
+                        }
+                    }
+
+                    return Ok(Form::Code(args_list, closed_list, body));
                 }
                 else if construct == "closure" {
                     if tail.len() < 1 {
@@ -524,9 +553,12 @@ impl Amd64Backend {
         match *sexp {
             Sexp::Atom(ref atom) => {
                 if let Atom::N(ref name) = *atom {
-                    if let Some(location) = environment.lookup(name) {
+                    if let Some((offset, location)) = environment.lookup(name) {
                         emit_comment!(self, "name {}", name);
-                        emit!(self, "movl {}(%esp), %eax", location);
+                        match location {
+                            Location::Stack => emit!(self, "movl {}(%esp), %eax", offset),
+                            Location::Closure => emit!(self, "movl {}(%edi), %eax", offset),
+                        }
                     }
                     else {
                         panic!("Unbound name: {}", name);
@@ -619,7 +651,7 @@ impl Amd64Backend {
                             panic!("Label {} does not exist", label);
                         }
                     }
-                    Ok(Form::Code(_, _)) => {
+                    Ok(Form::Code(..)) => {
                         panic!("Code form not allowed outside of labels form");
                     }
                     Ok(Form::Closure(label, closed_over)) => {
@@ -675,11 +707,18 @@ impl Amd64Backend {
             for (name, value) in bindings {
                 if let Sexp::Atom(Atom::N(ref name)) = *name {
                     let form = parse_form(value);
-                    if let Ok(Form::Code(arguments, body)) = form {
+                    if let Ok(Form::Code(arguments, closed, body)) = form {
                         self.buffer.push_str(name);
                         self.buffer.push_str(":\n");
                         {
                             let mut label_env = Environment::new_under(&environment);
+
+                            let mut offset = 0;
+                            for closed_over in closed {
+                                label_env.update_closure(closed_over, offset);
+                                offset += 4;
+                            }
+
                             let mut offset = -4;
                             for arg in arguments {
                                 emit_comment!(self, "Argument to {}: {}", name, arg);
