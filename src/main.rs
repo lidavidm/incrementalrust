@@ -496,12 +496,12 @@ impl Amd64Backend {
                 self.compile(arg2, environment);
                 let location2 = self.push();
                 emit!(self, "movl {}(%esp), %eax", location1);
-                emit!(self, "movl %eax, 0(%edi)");
+                emit!(self, "movl %eax, 0(%esi)");
                 emit!(self, "movl {}(%esp), %eax", location2);
-                emit!(self, "movl %eax, 4(%edi)");
-                emit!(self, "movl %edi, %eax");
+                emit!(self, "movl %eax, 4(%esi)");
+                emit!(self, "movl %esi, %eax");
                 emit!(self, "orl $1, %eax");
-                emit!(self, "addl $8, %edi");
+                emit!(self, "addl $8, %esi");
             }
         )
     }
@@ -522,18 +522,18 @@ impl Amd64Backend {
                     emit_comment!(self, "string '{}'", string);
 
                     let bytes = string.to_owned().into_bytes();
-                    emit!(self, "movl %edi, %eax");
+                    emit!(self, "movl %esi, %eax");
                     emit!(self, "orl $0b011, %eax");
-                    emit!(self, "movl ${}, 0(%edi)", bytes.len());
-                    emit!(self, "addl $4, %edi");
+                    emit!(self, "movl ${}, 0(%esi)", bytes.len());
+                    emit!(self, "addl $4, %esi");
                     for byte in bytes.iter() {
-                        emit!(self, "movb ${}, 0(%edi)", byte);
-                        emit!(self, "addl $1, %edi");
+                        emit!(self, "movb ${}, 0(%esi)", byte);
+                        emit!(self, "addl $1, %esi");
                     }
                     // Round up allocation to 8 bytes
                     let remainder = (4 + bytes.len()) % 8;
                     if remainder > 0 {
-                        emit!(self, "addl ${}, %edi", 8 - remainder);
+                        emit!(self, "addl ${}, %esi", 8 - remainder);
                     }
                 }
                 else {
@@ -619,8 +619,9 @@ impl Amd64Backend {
     fn compile_main(&mut self, sexp: &Sexp, environment: &mut Environment) {
         self.buffer.push_str("scheme_entry:\n");
         // Align rdi (base of heap) to 8-byte boundary
-        emit!(self, "addl $7, %edi");
-        emit!(self, "andl $0xfffffff8, %edi");
+        emit!(self, "movl %edi, %esi");
+        emit!(self, "addl $7, %esi");
+        emit!(self, "andl $0xfffffff8, %esi");
 
         self.compile(sexp, environment);
         emit!(self, "ret");
