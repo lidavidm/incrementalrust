@@ -627,14 +627,20 @@ impl Amd64Backend {
                     Ok(Form::Funcall(closure, args)) => {
                         emit_comment!(self, "call closure");
 
+                        let mut arg_offsets = Vec::new();
+                        for arg in args {
+                            self.compile(arg, environment);
+                            arg_offsets.push(self.push());
+                        }
+
                         let frame_size = self.peek().abs();
                         emit_comment!(self, "Save closure pointer");
                         emit!(self, "movl %edi, %eax");
                         let edi_offset = self.push();
                         emit_comment!(self, "Save slot for return code");
                         self.push();
-                        for arg in args.iter() {
-                            self.compile(arg, environment);
+                        for offset in arg_offsets {
+                            emit!(self, "movl {}(%esp), %eax", offset);
                             self.push();
                         }
 
