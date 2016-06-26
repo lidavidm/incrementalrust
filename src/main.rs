@@ -1060,5 +1060,6 @@ mod test {
         assert_eq!(compile_and_execute("(labels (a (code (x) () (+ x 1))) (b (code (x y) (a) (+ (funcall a x) y))) (let (a (closure a)) (funcall (closure b a) 21 20)))"), "42");
         assert_eq!(compile_and_execute("(labels (a (code (x) () \"Hello, world!\")) (funcall (closure a) 2))"), "\"Hello, world!\"");
         assert_eq!(compile_and_execute("(labels (apply1 (code (f) () (funcall f 1))) (plus1 (code (x) () (+ x 1))) (let (a1 (closure apply1)) (a2 (closure plus1)) (funcall a1 a2)))"), "2");
+        assert_eq!(compile_and_execute("(labels (lfact (code (n self) () (if (zero? n) 1 (* n (funcall self (- n 1) self))))) (let (fact (closure lfact)) (funcall fact 10 fact)))"), "3628800");
     }
 }
