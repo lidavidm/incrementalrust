@@ -596,9 +596,10 @@ impl Amd64Backend {
                                 for (name, value) in bindings {
                                     if let Sexp::Atom(Atom::N(ref name)) = *name {
                                         emit_comment!(self, "let {}", name);
-                                        self.compile(value, environment);
                                         let location = self.push();
                                         environment.update(name, location);
+                                        self.compile(value, environment);
+                                        emit!(self, "movl %eax, {}(%esp)", location);
                                     }
                                     else {
                                         panic!("Invalid name in let expression: {}", name);
