@@ -637,10 +637,10 @@ impl Amd64Backend {
                             self.push();
                         }
 
-                        self.push_stack();
-                        emit!(self, "subl ${}, %esp", frame_size - 4);
                         self.compile(closure, environment);
                         emit!(self, "xor $0x6, %eax");
+                        self.push_stack();
+                        emit!(self, "subl ${}, %esp", frame_size - 4);
                         // Set up edi
                         emit!(self, "movl %eax, %edi");
                         emit!(self, "addl $4, %edi");
