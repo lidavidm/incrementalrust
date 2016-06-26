@@ -1048,9 +1048,10 @@ mod test {
     }
 
     #[test]
-    fn labelcalls() {
-        assert_eq!(compile_and_execute("(labels (a (code (x) x)) (labelcall a 2))"), "2");
-        assert_eq!(compile_and_execute("(labels (a (code (x) (+ x 1))) (b (code (x y) (+ (labelcall a x) y))) (labelcall b 21 20))"), "42");
-        assert_eq!(compile_and_execute("(labels (a (code (x) \"Hello, world!\")) (labelcall a 2))"), "\"Hello, world!\"");
+    fn funcalls() {
+        assert_eq!(compile_and_execute("(labels (a (code (x) () x)) (funcall (closure a) 2))"), "2");
+        assert_eq!(compile_and_execute("(labels (a (code (x) () (+ x 1))) (b (code (x y) (a) (+ (funcall a x) y))) (let (a (closure a)) (funcall (closure b a) 21 20)))"), "42");
+        assert_eq!(compile_and_execute("(labels (a (code (x) () \"Hello, world!\")) (funcall (closure a) 2))"), "\"Hello, world!\"");
+        assert_eq!(compile_and_execute("(labels (apply1 (code (f) () (funcall f 1))) (plus1 (code (x) () (+ x 1))) (let (a1 (closure apply1)) (a2 (closure plus1)) (funcall a1 a2)))"), "2");
     }
 }
