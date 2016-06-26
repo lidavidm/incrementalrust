@@ -94,7 +94,7 @@ void print(int val) {
     free(string);
   }
   else if (IS_CLOSURE(val)) {
-    printf("(closure)");
+    printf("(closure %x)", val);
   }
   else {
     printf("Heap location: %p\n", memory);

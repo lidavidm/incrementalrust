@@ -137,8 +137,7 @@ enum Form<'a> {
     // Body of a label
     Code(Vec<&'a str>, Vec<&'a str>, &'a Sexp),
     If(&'a Sexp, &'a Sexp, &'a Sexp),
-    Labelcall(&'a str, &'a [Sexp]),
-    // Funcall(&'a Sexp, &'a [Sexp]),
+    Funcall(&'a Sexp, &'a [Sexp]),
     Closure(&'a str, &'a [Sexp]),
 }
 
@@ -147,7 +146,7 @@ enum FormError<'a> {
     InvalidForm(&'a Sexp),
     InvalidBinding(&'a Sexp),
     InvalidIf(&'a Sexp),
-    InvalidLabelcall(&'a Sexp, String),
+    InvalidFuncall(&'a Sexp, String),
     InvalidCode(&'a Sexp, String),
     NumArgs(&'a Sexp),
 }
@@ -245,17 +244,12 @@ fn parse_form(sexp: &Sexp) -> ::std::result::Result<Form, FormError> {
 
                     return Ok(Form::If(cond, true_branch, false_branch));
                 }
-                else if construct == "labelcall" {
+                else if construct == "funcall" {
                     if tail.is_empty() {
-                        return Err(FormError::InvalidLabelcall(sexp, "No label specified".to_owned()));
+                        return Err(FormError::InvalidFuncall(sexp, "No label specified".to_owned()));
                     }
-                    let (label, args) = tail.split_at(1);
-                    if let Sexp::Atom(Atom::N(ref label)) = label[0] {
-                        return Ok(Form::Labelcall(label, args));
-                    }
-                    else {
-                        return Err(FormError::InvalidLabelcall(sexp, "Invalid label".to_owned()));
-                    }
+                    let (closure, args) = tail.split_at(1);
+                    return Ok(Form::Funcall(&closure[0], args));
                 }
                 else if tail.len() == 1 {
                     return Ok(Form::UnaryPrimitive(construct, &tail[0]));
@@ -629,27 +623,33 @@ impl Amd64Backend {
                         self.compile(false_branch, environment);
                         emit_label!(self, label1);
                     }
-                    Ok(Form::Labelcall(label, args)) => {
-                        if environment.check_label(label) {
-                            emit_comment!(self, "call {}", label);
+                    Ok(Form::Funcall(closure, args)) => {
+                        emit_comment!(self, "call closure");
 
-                            let frame_size = self.peek().abs();
-                            emit_comment!(self, "Save slot for return code");
+                        let frame_size = self.peek().abs();
+                        emit_comment!(self, "Save closure pointer");
+                        emit!(self, "movl %edi, %eax");
+                        let edi_offset = self.push();
+                        emit_comment!(self, "Save slot for return code");
+                        self.push();
+                        for arg in args.iter() {
+                            self.compile(arg, environment);
                             self.push();
-                            for arg in args.iter() {
-                                self.compile(arg, environment);
-                                self.push();
-                            }
+                        }
 
-                            self.push_stack();
-                            emit!(self, "subl ${}, %esp", frame_size - 4);
-                            emit!(self, "call {}", label);
-                            self.pop_stack();
-                            emit!(self, "addl ${}, %esp", frame_size - 4);
-                        }
-                        else {
-                            panic!("Label {} does not exist", label);
-                        }
+                        self.push_stack();
+                        emit!(self, "subl ${}, %esp", frame_size - 4);
+                        self.compile(closure, environment);
+                        emit!(self, "xor $0x6, %eax");
+                        // Set up edi
+                        emit!(self, "movl %eax, %edi");
+                        emit!(self, "addl $4, %edi");
+
+                        emit!(self, "call *0(%eax)");
+                        self.pop_stack();
+                        emit!(self, "addl ${}, %esp", frame_size - 4);
+                        // Restore edi
+                        emit!(self, "movl {}(%esp), %edi", edi_offset);
                     }
                     Ok(Form::Code(..)) => {
                         panic!("Code form not allowed outside of labels form");
