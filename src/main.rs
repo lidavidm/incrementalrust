@@ -675,10 +675,9 @@ impl Amd64Backend {
                         if words % 2 == 1 {
                             words += 1;
                         }
-                        emit!(self, "addl ${}, %esi", 4 * words);
-
                         emit!(self, "movl %esi, %eax");
                         emit!(self, "orl $6, %eax");
+                        emit!(self, "addl ${}, %esi", 4 * words);
                     }
                     Err(err) => panic!("Error parsing form: {:?}", err),
                 }
