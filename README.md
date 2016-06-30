@@ -13,11 +13,26 @@ REPL:
 
     cargo run
 
+Compiler:
+
+    cargo run file.scm
+
 Tests:
 
     cargo test
 
-(compiler mode forthcoming)
+## Features
+
+This is by no means a complete or conformant Scheme compiler - in
+fact, it's a scheme compiler only in the sense that there are lots of
+parentheses. That said, there are
+
+- Integers, strings, characters, pairs
+- `let` form
+- Closures (no `lambda`; instead the primitives `labels`, `code`,
+  `closure` and `funcall` from the paper are exposed)
+- `if` form
+- Various operators
 
 ## Examples
 

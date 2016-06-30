@@ -650,6 +650,9 @@ impl Amd64Backend {
                         // Set up edi
                         emit!(self, "movl %eax, %edi");
                         emit!(self, "addl $4, %edi");
+                        // TODO: tail recursion. If lea eax+4 equals
+                        // the current closure pointer, then could be
+                        // a tail call.
 
                         emit!(self, "call *0(%eax)");
                         self.pop_stack();
